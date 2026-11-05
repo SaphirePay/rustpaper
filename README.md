@@ -19,9 +19,24 @@ Minecraft code or assets: the game files are prepared from your own copy of Mine
 
 ## Make a server (about 20 minutes the first time)
 
-You need: [Rust](https://rustup.rs), Python 3.10+, Git, Minecraft Java Edition 26.3 played once from the official
-launcher, and a Java 25 runtime (only to prepare the game files). Linux also needs `pkg-config libasound2-dev
-libudev-dev` (Debian/Ubuntu names).
+The same repo runs natively on Windows and Linux (x86_64): `setup.py` downloads the server runtime built for your
+system and builds the engine, the panel and your plugins on your own computer.
+
+**Linux, in one command** (Ubuntu, Debian, Fedora, Arch, openSUSE): it installs the build tools and Rust,
+downloads this repo, the runtime and a Java runtime, builds the engine and the panel, and prepares the game files
+if Minecraft is installed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SaphirePay/rustpaper/main/install.sh | bash
+```
+
+The game files are always made from your own copy of Minecraft Java Edition 26.3 (played once from the official
+launcher); nothing of Minecraft is downloaded. On a server without a desktop, prepare them on a computer that has
+Minecraft and copy its `runtime/.local/horizon-client/26.3` folder over.
+
+**Step by step** (Windows, or Linux by hand). You need: [Rust](https://rustup.rs), Python 3.10+, Git, and
+Minecraft Java Edition 26.3 played once from the official launcher (`python setup.py java` fetches the Java
+runtime that preparing uses). Linux also needs `pkg-config libasound2-dev libudev-dev` (Debian/Ubuntu names).
 
 ```bash
 git clone https://github.com/SaphirePay/rustpaper.git

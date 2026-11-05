@@ -2,8 +2,10 @@
 """Horizon Paper: a Minecraft Java 26.3 server written in Rust that runs Bukkit/Paper plugins written in Rust.
 
     python setup.py runtime                  download the Horizon server runtime this engine is built for
-    python setup.py prepare                  prepare the game files from your own Minecraft (once; Minecraft 26.3
-                                             played once from the official launcher, and Java 25 on the PATH)
+    python setup.py java                     download a Java 25 runtime into tools-bin/jre (only prepare uses it)
+    python setup.py prepare [--minecraft-dir DIR]
+                                             prepare the game files from your own Minecraft (once; Minecraft 26.3
+                                             played once from the official launcher; Java from `java` or the PATH)
     python setup.py mixins                   install horizon-mixins (the tool that applies the Paper layer)
     python setup.py engine [--quick|--check] build the Paper engine (out/horizon-client[.exe])
     python setup.py server DIR [--port N] [--offline] [--op NAME] [--world NAME] [--pause] [--nogui]
@@ -14,8 +16,9 @@
                                              start a server in the background and open the panel on it
                                              (--nogui: headless, and remembered; --gui: the panel again)
     python setup.py stop DIR                 stop a server
-    python setup.py panel [DIR]              open the panel: every server on this computer in one window
-                                             (built the first time, about 2 minutes)
+    python setup.py panel [DIR] [--build] [--no-open]
+                                             open the panel: every server on this computer in one window
+                                             (built the first time, about 2 minutes; --no-open only builds it)
     python setup.py plugin NAME [--dir DIR]  start a plugin from the template (default: plugins/NAME)
     python setup.py doctor                   what is installed and what is missing
 
@@ -34,6 +37,10 @@ import urllib.request
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
+# rustup installs into ~/.cargo/bin: found there too in a terminal opened before it was installed.
+_cargo_bin = pathlib.Path.home() / '.cargo' / 'bin'
+if not shutil.which('cargo') and (_cargo_bin / ('cargo.exe' if os.name == 'nt' else 'cargo')).exists():
+    os.environ['PATH'] = str(_cargo_bin) + os.pathsep + os.environ.get('PATH', '')
 PINS = json.loads((ROOT / 'pins.json').read_text(encoding='utf-8'))
 WINDOWS = os.name == 'nt'
 EXE = '.exe' if WINDOWS else ''
@@ -105,9 +112,17 @@ def asset_name():
     fail('the server runtime is published for Windows and Linux (x86_64) only')
 
 
+# Some download servers (Adoptium's) refuse Python's default user agent.
+AGENT = {'User-Agent': 'rustpaper-setup/1.0 (+https://github.com/SaphirePay/rustpaper)'}
+
+
+def fetch(url):
+    return urllib.request.urlopen(urllib.request.Request(url, headers=AGENT))
+
+
 def download(url, to):
     say('downloading', url)
-    with urllib.request.urlopen(url) as response, open(to, 'wb') as out:
+    with fetch(url) as response, open(to, 'wb') as out:
         shutil.copyfileobj(response, out)
 
 
@@ -174,19 +189,70 @@ def mojang_files():
     return jar
 
 
+JRE = ROOT / 'tools-bin' / 'jre'
+JAVA_VERSION = 25
+
+
+def java_home():
+    """tools-bin/jre (from `setup.py java`), else the Java on the PATH."""
+    if (JRE / 'bin' / f'java{EXE}').exists():
+        return JRE
+    found = shutil.which('java')
+    return pathlib.Path(found).resolve().parent.parent if found else None
+
+
+def cmd_java(_args):
+    if (JRE / 'bin' / f'java{EXE}').exists():
+        say(f'Java is in {JRE}')
+        return
+    machine = platform.machine().lower()
+    arch = 'aarch64' if machine in ('arm64', 'aarch64') else 'x64'
+    system = 'windows' if WINDOWS else 'mac' if sys.platform == 'darwin' else 'linux'
+    api = f'https://api.adoptium.net/v3/assets/latest/{JAVA_VERSION}/hotspot?architecture={arch}&image_type=jre&os={system}&vendor=eclipse'
+    with fetch(api) as r:
+        release = json.load(r)[0]['binary']['package']
+    archive = ROOT / 'tools-bin' / release['name']
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    download(release['link'], archive)
+    got = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if got != release['checksum']:
+        archive.unlink()
+        fail(f'{release["name"]}: SHA-256 {got} is not Adoptium\'s {release["checksum"]}')
+    unpack = ROOT / 'tools-bin' / 'jre-unpack'
+    shutil.rmtree(unpack, ignore_errors=True)
+    if archive.name.endswith('.zip'):
+        with zipfile.ZipFile(archive) as z:
+            z.extractall(unpack)
+    else:
+        with tarfile.open(archive) as t:
+            t.extractall(unpack, filter='data')
+    top = next(unpack.iterdir())
+    home = top / 'Contents' / 'Home' if (top / 'Contents' / 'Home').is_dir() else top
+    shutil.rmtree(JRE, ignore_errors=True)
+    shutil.move(str(home), JRE)
+    shutil.rmtree(unpack, ignore_errors=True)
+    archive.unlink()
+    if not WINDOWS:
+        for f in (JRE / 'bin').iterdir():
+            f.chmod(f.stat().st_mode | 0o111)
+    say(f'Java {JAVA_VERSION} in {JRE} (only `setup.py prepare` uses it)')
+
+
 def cmd_prepare(args):
     tool = RUNTIME / f'horizon-prepare{EXE}'
     if not tool.exists():
         fail('run `python setup.py runtime` first')
-    if not shutil.which('java'):
-        fail('a Java 25 runtime is needed to prepare the game files (https://adoptium.net), on the PATH')
+    if java_home() is None:
+        cmd_java([])
+    home = java_home()
+    env = dict(os.environ, JAVA_HOME=str(home), PATH=str(home / 'bin') + os.pathsep + os.environ.get('PATH', ''))
     jar = mojang_files()
     if '--server-jar' in args:
         jar = args[args.index('--server-jar') + 1]
     command = [tool, '--prepare', '--server-jar', jar, '--root', RUNTIME]
     if '--minecraft-dir' in args:
         command += ['--minecraft-dir', args[args.index('--minecraft-dir') + 1]]
-    run(command)
+    run(command, env=env)
     if not RESOURCES.is_dir():
         fail(f'the game files were not made in {RESOURCES}')
     say('game files ready:', RESOURCES)
@@ -284,11 +350,33 @@ def build_panel():
     run(['cargo', f'+{PINS["rust"]}', 'build', '--release', '--manifest-path', ROOT / 'panel' / 'Cargo.toml', '--target-dir', target])
     OUT.mkdir(exist_ok=True)
     shutil.copy2(target / 'release' / f'rustpaper-panel{EXE}', PANEL)
+    desktop_entry()
+
+
+def panel_stale():
+    return not PANEL.exists() or PANEL.stat().st_mtime < max(p.stat().st_mtime for p in (ROOT / 'panel').rglob('*') if p.is_file())
+
+
+def desktop_entry():
+    """On a Linux desktop, the panel in the applications menu (~/.local/share/applications)."""
+    if WINDOWS or sys.platform == 'darwin':
+        return
+    apps = pathlib.Path(os.environ.get('XDG_DATA_HOME', pathlib.Path.home() / '.local' / 'share')) / 'applications'
+    apps.mkdir(parents=True, exist_ok=True)
+    (apps / 'rustpaper-panel.desktop').write_text(
+        '[Desktop Entry]\nType=Application\nName=Horizon Servers\nComment=Every rustpaper server on this computer in one window\n'
+        f'Exec={PANEL}\nIcon={ROOT / "panel" / "assets" / "horizon-64.png"}\nTerminal=false\nCategories=Game;Utility;\n'
+        'StartupWMClass=rustpaper-panel\n',
+        encoding='utf-8')
+    say(f'the panel is in your applications menu as Horizon Servers ({apps / "rustpaper-panel.desktop"})')
 
 
 def open_panel(folder=None):
-    if not PANEL.exists() or PANEL.stat().st_mtime < max(p.stat().st_mtime for p in (ROOT / 'panel').rglob('*') if p.is_file()):
+    if panel_stale():
         build_panel()
+    if not WINDOWS and sys.platform != 'darwin' and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+        say('no desktop here (no DISPLAY or WAYLAND_DISPLAY): the server runs headless; the panel opens on a computer with a desktop')
+        return
     command = [str(PANEL)] + (['--select', str(folder)] if folder else [])
     flags = {}
     if WINDOWS:
@@ -304,8 +392,14 @@ def cmd_panel(args):
     if args and not args[0].startswith('--'):
         folder = server_folder(args, 'panel [DIR]')
         register(folder)
-    if '--build' in args:
+    if '--build' in args and panel_stale():
         build_panel()
+    if '--no-open' in args:
+        if panel_stale():
+            build_panel()
+        desktop_entry()
+        say(f'the panel is built: {PANEL}')
+        return
     open_panel(folder)
 
 
@@ -338,13 +432,14 @@ def cmd_doctor(_args):
         ('horizon-mixins', (ROOT / 'tools-bin' / 'bin' / f'horizon-mixins{EXE}').exists() or bool(shutil.which('horizon-mixins'))),
         ('Paper engine built', ENGINE.exists()),
         ('panel built (optional: `python setup.py panel` builds it)', PANEL.exists()),
+        (f'Java {JAVA_VERSION} for prepare (`python setup.py java`, or on the PATH)', java_home() is not None),
     ]
     for what, ok in rows:
         say(f'  [{"x" if ok else " "}] {what}')
 
 
 COMMANDS = {'runtime': cmd_runtime, 'prepare': cmd_prepare, 'mixins': cmd_mixins, 'engine': cmd_engine, 'server': cmd_server,
-            'start': cmd_start, 'stop': cmd_stop, 'panel': cmd_panel, 'plugin': cmd_plugin, 'doctor': cmd_doctor}
+            'java': cmd_java, 'start': cmd_start, 'stop': cmd_stop, 'panel': cmd_panel, 'plugin': cmd_plugin, 'doctor': cmd_doctor}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
