@@ -58,4 +58,5 @@ a minute or two; `--quick` builds a test engine faster than the optimized one.
 
 ## License
 
-[MIT](LICENSE): use it, change it, ship it, make it your own. Keep the license file with copies.
+[GPL-3.0](LICENSE): use it, change it, sell it. If you share a changed version (or a plugin built on the SDK),
+share its source under GPL-3.0 too.
