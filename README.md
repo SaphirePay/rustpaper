@@ -55,3 +55,7 @@ to reload it. Everything else (the API, events, threads, porting a Java plugin, 
 
 `engine/README.md` explains the Paper layer and its rows. `python setup.py engine --check` type-checks a change in
 a minute or two; `--quick` builds a test engine faster than the optimized one.
+
+## License
+
+[MIT](LICENSE): use it, change it, ship it, make it your own. Keep the license file with copies.
