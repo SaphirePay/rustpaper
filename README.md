@@ -23,7 +23,7 @@ launcher, and a Java 25 runtime (only to prepare the game files). Linux also nee
 libudev-dev` (Debian/Ubuntu names).
 
 ```bash
-git clone https://github.com/SaphirePay/horizon-paper.git
+git clone https://github.com/SaphirePay/Paper-26.3-Rewritten-in-Rust.git horizon-paper
 cd horizon-paper
 python setup.py runtime                                  # the Horizon server runtime (checked by SHA-256)
 python setup.py prepare                                  # game files from your Minecraft (Java 25 on the PATH)
