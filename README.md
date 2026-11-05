@@ -23,8 +23,8 @@ launcher, and a Java 25 runtime (only to prepare the game files). Linux also nee
 libudev-dev` (Debian/Ubuntu names).
 
 ```bash
-git clone https://github.com/SaphirePay/paper-rust.git
-cd paper-rust
+git clone https://github.com/SaphirePay/rustpaper.git
+cd rustpaper
 python setup.py runtime                                  # the Horizon server runtime (checked by SHA-256)
 python setup.py prepare                                  # game files from your Minecraft (Java 25 on the PATH)
 python setup.py engine                                   # builds the Paper engine (~5 min on a fast PC, first time)
