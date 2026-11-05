@@ -205,6 +205,7 @@ pub struct Shot {
     pub network_tab: Option<String>,
     pub open: Option<PathBuf>,
     pub dialog: Option<String>,
+    pub search: Option<String>,
     pub after: Duration,
     pub taken: bool,
 }
@@ -551,6 +552,9 @@ impl eframe::App for App {
         if self.synced.elapsed() > Duration::from_secs(2) {
             self.sync();
         }
+        if let Some(q) = self.shot.as_mut().and_then(|shot| shot.search.take()) {
+            self.search = q;
+        }
         let open = self.shot.as_mut().and_then(|shot| shot.open.take());
         if let Some(d) = self.shot.as_mut().and_then(|shot| shot.dialog.take()) {
             let i = self.selected.unwrap_or(0);
@@ -558,7 +562,7 @@ impl eframe::App for App {
                 "stop" => Some(Dialog::Stop { server: i }),
                 "add" => Some(Dialog::Add { path: String::new(), error: None }),
                 "network" => Some(Dialog::NewNetwork { name: "Skyline Network 2".into(), server: None }),
-                "ban" => Some(Dialog::Ban { server: i, name: "Steve0".into(), reason: String::new() }),
+                "ban" => Some(Dialog::Ban { server: i, name: "Alex4".into(), reason: String::new() }),
                 _ => None,
             };
         }
@@ -1497,12 +1501,10 @@ impl App {
                             if small_button(ui, "Kick", Kind::Normal).clicked() {
                                 self.dialog = Some(Dialog::Kick { server: i, name: name.clone(), reason: String::new() });
                             }
-                            if op {
-                                if small_button(ui, "Remove op", Kind::Normal).clicked() {
-                                    s.send(act("players/deop", json!({ "name": name })));
-                                }
-                            } else if small_button(ui, "Make op", Kind::Primary).clicked() {
-                                s.send(act("players/op", json!({ "name": name })));
+                            // One width for both words, so every row's buttons line up.
+                            let (label, path) = if op { ("Remove op", "players/deop") } else { ("Make op", "players/op") };
+                            if ui.add_sized(vec2(96.0, 32.0), styled(label, Kind::Normal)).clicked() {
+                                s.send(act(path, json!({ "name": name })));
                             }
                             if small_button(ui, "Ban IP", Kind::Normal).on_hover_text("Ban this player's address").clicked() {
                                 self.dialog = Some(Dialog::BanIp { server: i, name: name.clone(), reason: String::new() });

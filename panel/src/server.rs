@@ -379,7 +379,7 @@ fn take_event(state: &mut State, e: &Value) {
     let item = |kind, text: String| ChatItem { at, time: time.clone(), kind, name: name.clone(), text };
     match kind {
         "log" => {
-            let line = e["line"].as_str().unwrap_or_default().to_owned();
+            let line = strip_codes(e["line"].as_str().unwrap_or_default());
             // `say` from the console shows in the chat as `[Server] ...`, as players see it; its time is the
             // log line's own `[HH:MM:SS]`.
             if let Some(rest) = line.split("]: [Server] ").nth(1).or_else(|| line.split("]: [Not Secure] [Server] ").nth(1)) {
@@ -388,7 +388,7 @@ fn take_event(state: &mut State, e: &Value) {
             }
             state.console.push_back(line);
         }
-        "chat" => state.chat.push_back(item(ChatKind::Chat, e["message"].as_str().unwrap_or_default().to_owned())),
+        "chat" => state.chat.push_back(item(ChatKind::Chat, strip_codes(e["message"].as_str().unwrap_or_default()))),
         "join" => state.chat.push_back(item(ChatKind::Join, "joined the game".into())),
         "leave" => state.chat.push_back(item(ChatKind::Leave, "left the game".into())),
         "death" => {
@@ -438,10 +438,25 @@ fn api(server: &Server) -> Result<Api, String> {
     Api::find(&server.dir).map(|(a, _)| a).ok_or_else(|| "the server isn't running".to_owned())
 }
 
+/// Text without Minecraft's formatting codes: the section sign and the letter after it (colours such as
+/// `x f f a a 0 0` come as six of those).
+pub fn strip_codes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{a7}' {
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn lines(v: &Value) -> Vec<String> {
     for key in ["output", "lines", "messages"] {
         if let Some(list) = v[key].as_array() {
-            return list.iter().filter_map(|l| l.as_str().map(str::to_owned)).collect();
+            return list.iter().filter_map(|l| l.as_str().map(strip_codes)).collect();
         }
     }
     if let Some(s) = v.as_str() {

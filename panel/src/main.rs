@@ -39,6 +39,7 @@ fn main() -> eframe::Result {
         network_tab: value("--network-tab"),
         open: value("--open").map(PathBuf::from),
         dialog: value("--dialog"),
+        search: value("--search"),
         after: Duration::from_secs_f32(value("--after").and_then(|a| a.parse().ok()).unwrap_or(5.0)),
         taken: false,
     });

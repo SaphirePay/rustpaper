@@ -123,7 +123,8 @@ pub fn short(v: f64, unit: &str) -> String {
         "MB" => format!("{v:.0} MB"),
         "%" => format!("{v:.0}%"),
         "ms" if v < 10.0 => format!("{v:.2} ms"),
-        "ms" => format!("{v:.1} ms"),
+        "ms" if v < 100.0 => format!("{v:.1} ms"),
+        "ms" => format!("{v:.0} ms"),
         "" => format!("{v:.0}"),
         u => format!("{v:.1} {u}"),
     }
