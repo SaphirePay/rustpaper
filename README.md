@@ -9,8 +9,9 @@ jars. This repo has everything to run one and to write plugins for it:
 | `setup.py` | one script: download the runtime, prepare the game files, build the engine, make a server, start a plugin |
 | `engine/` | the Paper layer (`bundle/paper_api`), the engine rows (`family/`) and the build tools |
 | `sdk/` | what plugins build on: `horizon-bukkit` (Bukkit/Paper's API in Rust), `horizon-mod`, and `examples/` |
+| `panel/` | the server panel: one window for every server on your computer ([docs/PANEL.md](docs/PANEL.md)) |
 | `templates/plugin/` | a new plugin, ready to build |
-| `docs/` | [PLUGINS.md](docs/PLUGINS.md) (writing plugins), [SERVER.md](docs/SERVER.md) (running a server) |
+| `docs/` | [PLUGINS.md](docs/PLUGINS.md) (writing plugins), [SERVER.md](docs/SERVER.md) (running a server), [PANEL.md](docs/PANEL.md) (the panel) |
 | `pins.json` | the exact versions everything is built from |
 
 This is an unofficial project, not made, endorsed or supported by PaperMC, Mojang or Microsoft. It contains no
@@ -29,7 +30,7 @@ python setup.py runtime                                  # the Horizon server ru
 python setup.py prepare                                  # game files from your Minecraft (Java 25 on the PATH)
 python setup.py engine                                   # builds the Paper engine (~5 min on a fast PC, first time)
 python setup.py server myserver --offline --op YourName  # a server in ./myserver
-runtime/horizon-server --dir myserver run                # Windows: runtime\horizon-server.exe
+python setup.py start myserver                           # starts it and opens the panel (--nogui: headless)
 ```
 
 Join at `localhost:25565` with a Minecraft Java 26.3 client. `prepare` downloads Mojang's 26.3 server jar and version
@@ -37,6 +38,18 @@ file (both checked by their SHA-1) and reads the rest from your installed Minecr
 Minecraft). More in [docs/SERVER.md](docs/SERVER.md).
 
 `python setup.py doctor` shows what is done and what is missing.
+
+## The panel
+
+`python setup.py start myserver` opens the panel: one window for every server on your computer, instead of one
+window per server. It shows each server's TPS, tick time, players, memory and CPU with graphs, its console and
+chat (type as the server), and its players (kick, ban, op, whitelist), plugins (upload, replace, turn off, delete,
+and a built-in editor for their config files), backups and settings. Servers can be grouped into networks, with
+one page for the whole network: start or stop all, one chat, and bans on every server at once.
+
+Headless works as always: `python setup.py start myserver --nogui` (remembered for that server), or run it in a
+terminal with `runtime/horizon-server --dir myserver run`. The panel finds servers that are already running by
+itself, and closing it leaves every server running. More in [docs/PANEL.md](docs/PANEL.md).
 
 ## Write a plugin (5 minutes)
 

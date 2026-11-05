@@ -1,0 +1,32 @@
+[package]
+name = "rustpaper-panel"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "One window for every rustpaper server on this computer: stats, console, chat, players, backups, settings"
+publish = false
+
+[[bin]]
+name = "rustpaper-panel"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.37"
+# The launcher's icons are SVGs (Hugeicons): drawn by egui_extras' loader (resvg).
+egui_extras = { version = "0.37", default-features = false, features = ["svg", "image"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The servers' control API is plain HTTP on 127.0.0.1: no TLS needed.
+ureq = { version = "2", default-features = false, features = ["json"] }
+# Finds the servers already running (their horizon-server processes) and the game's RAM and CPU.
+sysinfo = { version = "0.31", default-features = false, features = ["system"] }
+toml = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rfd = "0.17"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true

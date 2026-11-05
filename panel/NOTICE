@@ -1,0 +1,15 @@
+rustpaper-panel
+
+The panel takes its look from the Horizon launcher (https://github.com/horizon-rust/horizon,
+MIT License, Copyright (c) 2026 Ludovic Marie and the Horizon contributors):
+
+- src/scene.rs ports the launcher's pixel sunset (launcher/src/scene.rs): its model, seeds and colour
+  sums, and its blur, as they are.
+- src/theme.rs follows horizon_theme::glass (colours, text and fill opacities, corners) and the
+  launcher's glass_ui.rs (sizes of rows, tabs, buttons, fields and switches).
+- assets/horizon-64.png is Horizon's mark (crates/horizon-theme/icons).
+
+Fonts (assets/fonts), under the SIL Open Font License 1.1 (OFL-*.txt beside them): Geist and Geist
+Mono (Vercel), Bricolage Grotesque (Mathieu Triay), as the launcher ships them.
+
+Icons (assets/icons): Hugeicons' free set, MIT (LICENSE-hugeicons.txt).
