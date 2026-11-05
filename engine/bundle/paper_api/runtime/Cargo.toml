@@ -1,0 +1,10 @@
+[package]
+name = "horizon-mod-runtime"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Only crates in Horizon's Cargo.lock, by version requirement.
+[dependencies]
+libloading = "0.8"
+serde_json = "1"

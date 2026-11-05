@@ -1,0 +1,10 @@
+name: AutoBroadcast
+version: 1.0
+main: autobroadcast
+commands:
+  autobroadcast:
+    description: AutoBroadcast admin command
+    usage: /autobroadcast reload
+permissions:
+  autobroadcast.reload:
+    default: op

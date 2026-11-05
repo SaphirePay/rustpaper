@@ -1,0 +1,69 @@
+org/bukkit/ChatColor$2.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$3.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$4.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$5.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$6.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$7.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$8.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$9.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$20.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$21.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/ChatColor$22.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its section code
+org/bukkit/MinecraftExperimental.value | member of a Java annotation: annotations have no place at run time in Rust
+org/bukkit/UndefinedNullability.value | member of a Java annotation
+org/bukkit/Warning.value | member of a Java annotation
+org/bukkit/Warning.propagate | member of a Java annotation
+org/bukkit/Warning.reason | member of a Java annotation
+org/bukkit/configuration/serialization/DelegateDeserialization.value | member of a Java annotation
+org/bukkit/configuration/serialization/SerializableAs.value | member of a Java annotation; in Rust the alias is ConfigurationSerializable::alias
+org/bukkit/configuration/file/YamlConstructor.flattenMapping | SnakeYAML constructor: takes SnakeYAML nodes; the Rust side parses with serde_yaml
+org/bukkit/configuration/file/YamlConstructor.construct | SnakeYAML constructor, as above
+org/bukkit/configuration/file/YamlConstructor$ConstructCustomObject.construct2ndStep | SnakeYAML constructor, as above
+org/bukkit/configuration/file/YamlConstructor$ConstructCustomObject.construct | SnakeYAML constructor, as above
+org/bukkit/configuration/file/YamlRepresenter$RepresentConfigurationSection.representData | SnakeYAML representer: takes and returns SnakeYAML nodes
+org/bukkit/configuration/file/YamlRepresenter$RepresentConfigurationSerializable.representData | SnakeYAML representer, as above
+org/bukkit/UnsafeValues.processClass | rewrites a plugin class file's Java bytecode
+org/bukkit/UnsafeValues.get | Commodore's field remapping for Java class names
+org/bukkit/plugin/PluginLogger.log | takes a java.util.logging.LogRecord; Plugin::info, warning and severe are the Rust side
+org/bukkit/plugin/java/LibraryLoader.createLoader | returns a Java ClassLoader over Maven libraries
+org/bukkit/plugin/EventExecutor.create | builds a listener from a java.lang.reflect.Method
+org/bukkit/util/BlockIterator.remove | java.util.Iterator.remove, which Bukkit makes always throw; a Rust Iterator has no such method
+org/bukkit/util/OldEnum.ordinal | Java bridge for classes that were enums; an enum constant here is its name, and values() is the order
+org/bukkit/util/OldEnum.name | Java bridge, as above
+org/bukkit/permissions/PermissibleBase$RemoveAttachmentRunnable.run | a java.lang.Runnable private to PermissibleBase, which is already left out as plumbing
+org/bukkit/FeatureFlagImpl$Deprecated.key | implementation class behind FeatureFlag
+org/bukkit/FeatureFlagImpl$Deprecated.getKey | implementation class behind FeatureFlag
+org/bukkit/Bukkit.setServer | installs the Java Server singleton, once, from inside the server; plugins can't call it twice and the Rust side has no such object
+org/bukkit/command/MessageCommandSender.setOp | default method that only throws UnsupportedOperationException: a sender that only takes messages has no such thing to do
+org/bukkit/command/MessageCommandSender.removeAttachment | default that only throws, as above
+org/bukkit/command/MessageCommandSender.recalculatePermissions | default that only throws, as above
+org/bukkit/command/MessageCommandSender.isPermissionSet | default that only throws, as above
+org/bukkit/command/MessageCommandSender.isOp | default that only throws, as above
+org/bukkit/command/MessageCommandSender.hasPermission | default that only throws, as above
+org/bukkit/command/MessageCommandSender.getName | default that only throws, as above
+org/bukkit/command/MessageCommandSender.getEffectivePermissions | default that only throws, as above
+org/bukkit/command/MessageCommandSender.addAttachment | default that only throws, as above
+org/bukkit/command/MessageCommandSender.name | default that only throws, as above
+org/bukkit/command/MessageCommandSender.spigot | default that only throws, as above
+org/bukkit/Material.getData | returns a java.lang.Class for the legacy MaterialData family, and a Rust type can't be handed over as a value
+org/bukkit/Material.getNewData | returns org.bukkit.material.MaterialData, the pre-1.13 Java class hierarchy, which has no Rust form
+org/bukkit/ChatColor.asBungee | returns BungeeCord's net.md_5.bungee.api.ChatColor, a Java library class; a colour here is its own value
+org/bukkit/util/Vector.toVector3i | returns org.joml.Vector3i, a Java library class
+org/bukkit/util/Vector.toVector3f | returns org.joml.Vector3f, a Java library class
+org/bukkit/util/Vector.toVector3d | returns org.joml.Vector3d, a Java library class
+org/bukkit/util/Vector.fromJOML | takes org.joml vectors, a Java library class
+org/bukkit/plugin/Plugin.getSLF4JLogger | returns org.slf4j.Logger, a Java library class; `log` is the way here
+org/bukkit/plugin/java/JavaPlugin.getSLF4JLogger | returns org.slf4j.Logger, a Java library class; `log` is the way here
+org/bukkit/plugin/Plugin.getLog4JLogger | returns log4j's Logger, a Java library class
+org/bukkit/plugin/Plugin.getComponentLogger | returns Adventure's ComponentLogger, a Java logging class over slf4j
+org/bukkit/plugin/java/JavaPlugin.getComponentLogger | returns Adventure's ComponentLogger, a Java logging class over slf4j
+org/bukkit/plugin/java/JavaPlugin.init | the class loader's private set-up of a plugin object, with a ClassLoader among its arguments
+org/bukkit/plugin/Plugin.getPluginLoader | returns the class that loads jars through a ClassLoader; a library here is opened by the engine
+org/bukkit/plugin/java/JavaPlugin.getPluginLoader | returns the class that loads jars through a ClassLoader; a library here is opened by the engine
+org/bukkit/plugin/PluginManager.registerInterface | takes a Class of PluginLoader to instantiate by reflection
+org/bukkit/UnsafeValues.getInternalPotionData | returns a Java-side record of Paper's internal potion class, with no meaning outside its implementation
+org/bukkit/generator/ChunkGenerator$ChunkData.getTypeAndData | returns org.bukkit.material.MaterialData, the legacy class left out of this SDK as a whole
+org/bukkit/plugin/RegisteredListener.getListener | returns the object whose annotated methods Java found by reflection: a listener here is a closure, and `get_plugin_name` says whose it is
+org/bukkit/plugin/RegisteredListener.getExecutor | returns the reflection wrapper round a Java method: a listener here is a closure, and `call_event` runs it
+org/bukkit/event/EventHandler.priority | member of a Java annotation: `register_event_with` takes it as an argument
+org/bukkit/event/EventHandler.ignoreCancelled | member of a Java annotation: `register_event_with` takes it as an argument

@@ -1,0 +1,12 @@
+**/target/
+/out/
+/runtime/
+/tools-bin/
+plugins/*/target/
+plugins/*/out/
+/myserver/
+/testserver/
+engine/target/
+*.dll
+*.so
+*.exe

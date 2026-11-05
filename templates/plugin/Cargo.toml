@@ -1,0 +1,17 @@
+[package]
+name = "{{CRATE}}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-bukkit = { path = "{{SDK}}" }
+
+[profile.release]
+# A panic in the plugin is caught and logged instead of stopping the server.
+panic = "unwind"
+
+[workspace]

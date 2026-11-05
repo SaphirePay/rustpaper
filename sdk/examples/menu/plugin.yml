@@ -1,0 +1,7 @@
+name: Menu
+version: 1.0
+main: menu
+commands:
+  menu:
+    description: Open the menu
+    usage: /menu

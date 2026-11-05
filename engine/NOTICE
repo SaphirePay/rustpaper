@@ -1,0 +1,11 @@
+Horizon Paper engine
+
+The Paper plugin layer for Horizon: a Horizon server that loads Bukkit and Paper plugins rewritten in Rust,
+from plugins/, by their plugin.yml, as Paper loads its jars. It is not made, endorsed or supported by
+PaperMC, FabricMC or the Horizon project.
+
+Parts of it began as an independent Rust implementation of Fabric API's event contracts for Horizon (Fabric
+API is Copyright FabricMC and its contributors, Apache License 2.0). Fabric's loader, events and mod APIs
+are gone from this engine; it contains none of Fabric API's Java.
+
+Minecraft is a trademark of Mojang Synergies AB. This work contains no Minecraft code or assets.

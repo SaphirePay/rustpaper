@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "example_welcome",
+  "version": "0.1.0",
+  "name": "Example welcome",
+  "description": "A mod loaded at run time: greets players, answers a command, refuses a break",
+  "license": "Apache-2.0",
+  "depends": { "paper_events": ">=0.1.0" }
+}

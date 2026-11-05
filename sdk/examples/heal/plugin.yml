@@ -1,0 +1,12 @@
+name: Heal
+version: 1.0
+main: heal
+commands:
+  heal:
+    description: Heal yourself or another player
+    usage: /heal [player]
+permissions:
+  heal.use:
+    default: op
+  heal.others:
+    default: op

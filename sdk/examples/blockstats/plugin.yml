@@ -1,0 +1,7 @@
+name: BlockStats
+version: 1.0
+main: blockstats
+commands:
+  blockstats:
+    description: Show how many blocks a player has broken
+    usage: /blockstats [player]

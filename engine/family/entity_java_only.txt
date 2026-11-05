@@ -1,0 +1,1 @@
+org/bukkit/entity/memory/MemoryKey.getMemoryClass | a Java Class object naming the value type: Rust has no runtime class to hand back, and a memory is not typed that way in the game

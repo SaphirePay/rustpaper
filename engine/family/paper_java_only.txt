@@ -1,0 +1,14 @@
+io/papermc/paper/plugin/loader/library/impl/MavenLibraryResolver.addRepository | adds a Maven repository for Paper to fetch Java jars from at load; a Rust plugin has no class path, its crates are linked when it's built
+io/papermc/paper/plugin/loader/library/impl/MavenLibraryResolver.addDependency | names a Maven artifact to put on the plugin's Java class path; the Rust equivalent is a Cargo dependency, at build time
+io/papermc/paper/plugin/loader/library/impl/MavenLibraryResolver.register | hands resolved jars to a LibraryStore, which adds them to a Java class loader
+io/papermc/paper/plugin/loader/library/impl/JarLibrary.register | adds a jar to the plugin's Java class path
+io/papermc/paper/plugin/loader/library/ClassPathLibrary.register | the interface of what goes on a Java class path
+io/papermc/paper/plugin/loader/library/LibraryStore.addLibrary | adds a jar file to a Java class loader
+io/papermc/paper/plugin/loader/PluginClasspathBuilder.addLibrary | builds the Java class path of a plugin's PluginClassLoader
+io/papermc/paper/plugin/loader/PluginClasspathBuilder.getContext | only reachable from PluginLoader.classloader, which runs to build a Java class path; a Rust plugin's context is BootstrapContext
+com/destroystokyo/paper/util/SneakyThrow.sneaky | rethrows a checked Java exception past the compiler; Rust has neither checked exceptions nor throw
+com/destroystokyo/paper/utils/PaperPluginLogger.getLogger | returns a java.util.logging.Logger object; Rust plugins log through Plugin.info and friends
+com/destroystokyo/paper/utils/PaperPluginLogger.setParent | java.util.logging's logger tree, which doesn't exist in Rust
+io/papermc/paper/util/JarManifests.manifest | reads the jar manifest of a Java Class; a Rust plugin is not a jar and has no Class
+com/destroystokyo/paper/ClientOption.getType | returns a java.lang.Class; Rust has no class objects, each option's value has its own Rust type
+io/papermc/paper/ban/BanListType.typeClass | returns a java.lang.Class; Rust has no class objects

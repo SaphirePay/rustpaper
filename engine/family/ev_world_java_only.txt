@@ -1,0 +1,29 @@
+org/bukkit/event/HandlerList.bake | turns Java's listener lists into arrays for speed: listeners here are closures held by the host, with no such step
+org/bukkit/event/HandlerList.bakeAll | as bake, for every list
+org/bukkit/event/EventException.getCause | a java.lang.Throwable: a Rust listener doesn't throw, and a panic is caught and logged by the host
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$PlayerIterator.hasNext | a private class of Paper's event: plugins only ever see a java.util.Iterator, which is PingPlayers here
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$PlayerIterator.next | a private class of Paper's event: plugins only ever see a java.util.Iterator, which is PingPlayers here
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$PlayerIterator.remove | a private class of Paper's event: plugins only ever see a java.util.Iterator, which is PingPlayers here
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.getUniqueId | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.getName | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.setName | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.getId | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.setId | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.getTextures | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.setTextures | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.getProperties | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.hasProperty | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.setProperty | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.setProperties | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.removeProperty | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.clearProperties | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.isComplete | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.completeFromCache | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.complete | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.update | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.clone | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+com/destroystokyo/paper/event/server/PaperServerListPingEvent$UncheckedPlayerProfile.serialize | a private class of Paper's event behind getPlayerSample: no plugin can name it, and Rust has PlayerProfile for the same thing
+io/papermc/paper/plugin/lifecycle/event/handler/LifecycleEventHandler.run | Java's functional interface: a handler here is the closure given to LifecycleEventManager, and running it is calling it
+com/destroystokyo/paper/event/server/ServerExceptionEvent.getException | Paper's wrapper round a java.lang.Throwable from a Java listener, task or channel: a Rust server has no such object, and a panic in a listener is caught and logged by the host
+com/destroystokyo/paper/event/server/ServerExceptionEvent.getHandlers | the class only carries that Throwable
+com/destroystokyo/paper/event/server/ServerExceptionEvent.getHandlerList | the class only carries that Throwable

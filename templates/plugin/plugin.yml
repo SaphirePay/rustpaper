@@ -1,0 +1,11 @@
+name: {{NAME}}
+version: 0.1.0
+main: {{CRATE}}
+description: A Horizon Paper plugin
+commands:
+  {{COMMAND}}:
+    description: Says hello
+    usage: /{{COMMAND}}
+permissions:
+  {{CRATE}}.use:
+    default: true

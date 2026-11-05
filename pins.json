@@ -1,0 +1,7 @@
+{
+  "minecraft": "26.3",
+  "rust": "1.99.1",
+  "horizon": "cbfae59314dfa74d54cb8a379cae609c6f5ec91d",
+  "horizon_mixins": "a2af5c0dd4117d51ecd70066ba7a00b4a2c10dab",
+  "horizon_runtime": "nightly-2026-10-31"
+}

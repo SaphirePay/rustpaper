@@ -1,0 +1,12 @@
+org/bukkit/block/BlockType.getBlockDataClass | returns a java.lang.Class object: a Rust class is chosen with the generic `BlockData::class::<C>()`
+org/bukkit/block/BlockType$Typed.getBlockDataClass | returns a java.lang.Class object: a Rust class is chosen with the generic `BlockData::class::<C>()`
+org/bukkit/inventory/ItemType.getItemMetaClass | returns a java.lang.Class object: a Rust class is chosen with the generic `ItemStack::meta::<M>()`
+org/bukkit/inventory/ItemType$Typed.getItemMetaClass | returns a java.lang.Class object: a Rust class is chosen with the generic `ItemStack::meta::<M>()`
+org/bukkit/inventory/MenuType.getInventoryViewClass | returns a java.lang.Class object: there's no class object to hand back in Rust
+org/bukkit/inventory/meta/tags/ItemTagType.getComplexType | returns a java.lang.Class object: the trait's associated type `Complex` is this in Rust
+org/bukkit/inventory/meta/tags/ItemTagType.getPrimitiveType | returns a java.lang.Class object: the trait's associated type `Primitive` is this in Rust
+org/bukkit/inventory/meta/tags/ItemTagType$PrimitiveTagType.getComplexType | returns a java.lang.Class object: the trait's associated type `Complex` is this in Rust
+org/bukkit/inventory/meta/tags/ItemTagType$PrimitiveTagType.getPrimitiveType | returns a java.lang.Class object: the trait's associated type `Primitive` is this in Rust
+org/bukkit/block/BlockState.setData | takes org.bukkit.material.MaterialData, the legacy class left out of this SDK as a whole
+org/bukkit/inventory/FurnaceRecipe.setInput | takes org.bukkit.material.MaterialData, the legacy class left out of this SDK as a whole
+org/bukkit/inventory/meta/ItemMeta.setVersion | internal to Bukkit's ConfigurationSerializable: tells a Java deserializer which data version a map came from; a Rust stack has no such map
