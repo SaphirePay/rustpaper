@@ -1,4 +1,4 @@
-# Horizon Paper
+# Paper 26.3 Rewritten in Rust
 
 Paper, rewritten in Rust: a Minecraft Java Edition 26.3 server built on [Horizon](https://github.com/horizon-rust/horizon)
 that loads Bukkit and Paper plugins written in Rust, from `plugins/`, by their `plugin.yml`, the way Paper loads
