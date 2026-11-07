@@ -152,8 +152,10 @@ fn tag_name(tag: &str) -> &str {
     tag.split(':').next().unwrap_or(tag)
 }
 
-/// bukkit~: net/kyori/adventure/text/minimessage/MiniMessage.deserialize, net/kyori/adventure/text/minimessage/MiniMessage.miniMessage | colors, decorations, click, hover and insertion; gradient and rainbow draw their first color only
+/// bukkit~: net/kyori/adventure/text/minimessage/MiniMessage.deserialize, net/kyori/adventure/text/minimessage/MiniMessage.miniMessage | colors, decorations, click, hover and insertion; gradient and rainbow draw their first color only; `<small>` is small capitals (Horizon's own tag)
 pub fn mini_message(input: &str) -> Component {
+    // `<small>text</small>`: small capitals (crate::smallcaps), before the tags are read.
+    let input = &*crate::smallcaps::apply(input);
     let mut parts: Vec<Value> = Vec::new();
     // The open tags, each with what it set.
     let mut open: Vec<(String, String, Value)> = Vec::new();

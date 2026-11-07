@@ -54,6 +54,7 @@ pub mod pure2;
 pub mod registry;
 pub mod registry_data;
 pub mod scheduler;
+pub mod smallcaps;
 pub mod scoreboard;
 pub mod server;
 pub mod util;
