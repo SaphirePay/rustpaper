@@ -904,6 +904,20 @@ pub(crate) static OPEN_INVENTORIES: Mutex<BTreeMap<String, Inventory>> = Mutex::
 /// opened over another) is that window's, not the GUI's that replaced it.
 pub(crate) static GUI_WINDOWS: Mutex<BTreeMap<String, i64>> = Mutex::new(BTreeMap::new());
 
+/// A GUI title as the game's text: legacy `§`/`&` text, or a text component written as JSON (`{"text":..}` or
+/// `[..]`), which can carry what legacy text can't, like a resource pack font (a drawn window behind the slots).
+pub fn title_component(title: &str) -> Value {
+    let t = title.trim_start();
+    if t.starts_with('{') || t.starts_with('[') {
+        if let Ok(v) = serde_json::from_str::<Value>(t) {
+            if v.is_object() || v.is_array() {
+                return v;
+            }
+        }
+    }
+    adventure::legacy(title).0
+}
+
 impl Inventory {
     /// bukkit: org/bukkit/Bukkit.createInventory, org/bukkit/Server.createInventory
     pub fn create(size: usize, title: &str) -> Self {
@@ -1059,7 +1073,7 @@ impl Player {
         if fam_items::open_typed(self, inventory) {
             return;
         }
-        let answer = query(json!({ "op": "open_menu", "uuid": self.uuid, "rows": inventory.contents.len() / 9, "title": adventure::legacy(&inventory.title).0, "items": inventory.items() }));
+        let answer = query(json!({ "op": "open_menu", "uuid": self.uuid, "rows": inventory.contents.len() / 9, "title": title_component(&inventory.title), "items": inventory.items() }));
         if !answer.is_null() {
             OPEN_INVENTORIES.lock().unwrap_or_else(|e| e.into_inner()).insert(self.uuid.clone(), inventory.clone());
             let mut windows = GUI_WINDOWS.lock().unwrap_or_else(|e| e.into_inner());
