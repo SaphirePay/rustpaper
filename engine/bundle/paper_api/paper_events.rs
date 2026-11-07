@@ -14,7 +14,7 @@ use crate::game::{paper_bridge as bridge, paper_fam_core as core, paper_fam_ev_p
 use horizon_client::{paper_hub as hub, paper_net as net, items::ItemStack};
 use horizon_world::registry::BlockStateId;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, Mutex, Once, RwLock},
 };
 
@@ -325,6 +325,263 @@ pub(in crate::game) fn register_plugin_command(usage: &str, level: u8, handler: 
 }
 
 static PLUGIN_WORDS: RwLock<std::collections::BTreeSet<String>> = RwLock::new(std::collections::BTreeSet::new());
+
+// ---- Who answers a word several plugins took (command-owners.yml, `/commands`) ----
+//
+// On Paper the first plugin to register a label keeps it and the others answer only `/plugin:label`. Here every
+// plugin with the word used to hear it, so two ran (and EssentialsX, finding another plugin with its word,
+// ran that one's again). Now one plugin hears a word: the one command-owners.yml names, else the first that
+// registered it; `/name:word` reaches that plugin; a plugin can be kept off a word altogether.
+
+/// Each word's plugins (runtime ids), in the order they registered it. A plugin swapped out stays listed (so a
+/// hot swap keeps its place) and is skipped while it isn't loaded.
+static WORD_PLUGINS: RwLock<BTreeMap<String, Vec<String>>> = RwLock::new(BTreeMap::new());
+
+#[derive(Default, Clone)]
+struct CommandOwners {
+    /// word -> plugin (name or id, any case).
+    owners: BTreeMap<String, String>,
+    /// plugin (lower case) -> words it never answers.
+    disabled: BTreeMap<String, std::collections::BTreeSet<String>>,
+}
+
+static OWNERS: RwLock<Option<CommandOwners>> = RwLock::new(None);
+
+const OWNERS_FILE: &str = "command-owners.yml";
+
+fn owners_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(OWNERS_FILE)
+}
+
+/// command-owners.yml: `owners:` word: Plugin, `disabled:` Plugin: [word, word].
+fn read_owners() -> CommandOwners {
+    let mut out = CommandOwners::default();
+    let Ok(text) = std::fs::read_to_string(owners_path()) else { return out };
+    let mut section = String::new();
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or_default();
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indented = line.starts_with(' ') || line.starts_with('\t');
+        let Some((key, value)) = line.trim().split_once(':') else { continue };
+        let (key, value) = (key.trim().trim_matches(['"', '\'']).to_ascii_lowercase(), value.trim());
+        if !indented {
+            section = key;
+            continue;
+        }
+        match section.as_str() {
+            "owners" if !value.is_empty() => {
+                out.owners.insert(key.trim_start_matches('/').to_owned(), value.trim_matches(['"', '\'']).to_owned());
+            }
+            "disabled" => {
+                let words = value.trim_start_matches('[').trim_end_matches(']').split(',').map(|w| w.trim().trim_matches(['"', '\'']).trim_start_matches('/').to_ascii_lowercase()).filter(|w| !w.is_empty());
+                out.disabled.entry(key).or_default().extend(words);
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn write_owners(o: &CommandOwners) {
+    let mut text = String::from("# Which plugin answers a command several plugins have (the others don't; the console's `plugin:command` still reaches them),\n# and commands a plugin is kept off. Changed live with /commands; read at start.\nowners:\n");
+    for (word, plugin) in &o.owners {
+        text.push_str(&format!("  {word}: {plugin}\n"));
+    }
+    text.push_str("disabled:\n");
+    for (plugin, words) in &o.disabled {
+        if !words.is_empty() {
+            text.push_str(&format!("  {plugin}: [{}]\n", words.iter().cloned().collect::<Vec<_>>().join(", ")));
+        }
+    }
+    let tmp = owners_path().with_extension("yml.tmp");
+    if std::fs::write(&tmp, text).is_ok() {
+        let _ = std::fs::rename(&tmp, owners_path());
+    }
+}
+
+fn owners() -> CommandOwners {
+    if let Some(o) = OWNERS.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        return o.clone();
+    }
+    let o = read_owners();
+    *OWNERS.write().unwrap_or_else(|e| e.into_inner()) = Some(o.clone());
+    o
+}
+
+fn edit_owners(f: impl FnOnce(&mut CommandOwners)) {
+    let mut o = owners();
+    f(&mut o);
+    write_owners(&o);
+    *OWNERS.write().unwrap_or_else(|e| e.into_inner()) = Some(o);
+}
+
+/// The plugin registering a word now (from its `plugin.yml` as it starts, or later from its code).
+pub(in crate::game) fn note_word(word: &str, owner: Option<&str>) {
+    let Some(id) = owner.map(str::to_owned).or_else(horizon_mod_runtime::current_owner) else { return };
+    let word = word.to_ascii_lowercase();
+    let mut map = WORD_PLUGINS.write().unwrap_or_else(|e| e.into_inner());
+    let list = map.entry(word).or_default();
+    if !list.contains(&id) {
+        list.push(id);
+    }
+}
+
+fn loaded_ids() -> Vec<String> {
+    horizon_mod_runtime::loaded().into_iter().map(|(id, _)| id).collect()
+}
+
+/// A plugin by its id or its `plugin.yml` name, any case: its id.
+fn id_of(name: &str) -> Option<String> {
+    let ids = loaded_ids();
+    ids.iter().find(|id| id.eq_ignore_ascii_case(name)).cloned().or_else(|| ids.into_iter().find(|id| horizon_mod_runtime::name_of(id).is_some_and(|n| n.eq_ignore_ascii_case(name))))
+}
+
+fn shown(id: &str) -> String {
+    horizon_mod_runtime::name_of(id).unwrap_or_else(|| id.to_owned())
+}
+
+fn is_disabled(o: &CommandOwners, id: &str, word: &str) -> bool {
+    let name = shown(id).to_ascii_lowercase();
+    [id.to_ascii_lowercase(), name].iter().any(|k| o.disabled.get(k).is_some_and(|w| w.contains(word)))
+}
+
+/// The plugins of a word that answer it, after the disabled list, in order.
+fn live_plugins(o: &CommandOwners, word: &str) -> Vec<String> {
+    let ids = loaded_ids();
+    WORD_PLUGINS.read().unwrap_or_else(|e| e.into_inner()).get(word).map_or_else(Vec::new, |list| list.iter().filter(|id| ids.contains(id) && !is_disabled(o, id, word)).cloned().collect())
+}
+
+/// The one plugin that answers `word`: the owner named in the file if it has the word, else the first.
+fn owner_of(o: &CommandOwners, word: &str) -> Option<String> {
+    let live = live_plugins(o, word);
+    if let Some(wanted) = o.owners.get(word)
+        && let Some(id) = live.iter().find(|id| id.eq_ignore_ascii_case(wanted) || shown(id).eq_ignore_ascii_case(wanted))
+    {
+        return Some(id.clone());
+    }
+    live.into_iter().next()
+}
+
+/// For a `command` event: which plugins hear it (None: as before, every plugin decides for itself), with the
+/// line's `plugin:` prefix taken off when it names one. An empty list: every plugin with the word is kept off it.
+pub(in crate::game) fn command_route(payload: &mut serde_json::Value) -> Option<Vec<String>> {
+    let line = payload["line"].as_str()?.to_owned();
+    let trimmed = line.trim_start_matches('/');
+    let first = trimmed.split_whitespace().next()?.to_ascii_lowercase();
+    let o = owners();
+    if let Some((prefix, word)) = first.split_once(':')
+        && let Some(id) = id_of(prefix)
+    {
+        let rest = trimmed.split_once(':').map_or("", |split| split.1).to_owned();
+        payload["line"] = serde_json::Value::String(rest);
+        return Some(if is_disabled(&o, &id, word) { Vec::new() } else { vec![id] });
+    }
+    let known = WORD_PLUGINS.read().unwrap_or_else(|e| e.into_inner()).get(&first).is_some_and(|list| !list.is_empty());
+    if !known {
+        return None;
+    }
+    Some(owner_of(&o, &first).into_iter().collect())
+}
+
+/// `/commands ...` (operators and the console): what to answer.
+pub(in crate::game) fn commands_word(line: &str) -> Vec<String> {
+    let mut words = line.trim_start_matches('/').split_whitespace().skip(1);
+    let action = words.next().unwrap_or("conflicts").to_ascii_lowercase();
+    let (a, b) = (words.next().map(str::to_owned), words.next().map(str::to_owned));
+    let o = owners();
+    let names = |list: &[String]| list.iter().map(|id| shown(id)).collect::<Vec<_>>().join(", ");
+    match action.as_str() {
+        "conflicts" | "list" => {
+            let all: Vec<(String, Vec<String>)> = WORD_PLUGINS.read().unwrap_or_else(|e| e.into_inner()).iter().map(|(w, l)| (w.clone(), l.clone())).collect();
+            let ids = loaded_ids();
+            let mut out = vec!["\u{a7}6Commands several plugins have \u{a7}7(\u{a7}aanswers\u{a7}7; the others don't):".to_owned()];
+            for (word, list) in all {
+                let present: Vec<String> = list.into_iter().filter(|id| ids.contains(id)).collect();
+                if present.len() < 2 {
+                    continue;
+                }
+                let owner = owner_of(&o, &word);
+                let rest: Vec<String> = present.iter().filter(|id| Some(*id) != owner.as_ref()).map(|id| if is_disabled(&o, id, &word) { format!("\u{a7}8{} (off)", shown(id)) } else { format!("\u{a7}7{}", shown(id)) }).collect();
+                let pinned = if o.owners.contains_key(&word) { " \u{a7}8(set)" } else { "" };
+                out.push(format!(" \u{a7}f/{word} \u{a7}8» \u{a7}a{}{pinned} \u{a7}8| {}", owner.map_or("nobody".to_owned(), |id| shown(&id)), rest.join("\u{a7}8, ")));
+            }
+            if out.len() == 1 {
+                out.push(" \u{a7}7None: every command has one plugin.".to_owned());
+            }
+            out.push("\u{a7}7/commands owner <command> <plugin|reset> \u{a7}8• \u{a7}7/commands disable|enable <plugin> <command> \u{a7}8• \u{a7}7/commands who <command>".to_owned());
+            out
+        }
+        "who" => match a {
+            Some(word) => {
+                let word = word.trim_start_matches('/').to_ascii_lowercase();
+                let list = WORD_PLUGINS.read().unwrap_or_else(|e| e.into_inner()).get(&word).cloned().unwrap_or_default();
+                let ids = loaded_ids();
+                let present: Vec<String> = list.into_iter().filter(|id| ids.contains(id)).collect();
+                if present.is_empty() {
+                    vec![format!("\u{a7}7No plugin has /{word}: the game's own command, if any, answers it.")]
+                } else {
+                    vec![format!("\u{a7}f/{word}\u{a7}7: {} \u{a7}8» \u{a7}aanswered by {}", names(&present), owner_of(&o, &word).map_or("nobody (all kept off)".to_owned(), |id| shown(&id)))]
+                }
+            }
+            None => vec!["\u{a7}cUsage: /commands who <command>".to_owned()],
+        },
+        "owner" | "set" => match (a, b) {
+            (Some(word), Some(plugin)) => {
+                let word = word.trim_start_matches('/').to_ascii_lowercase();
+                if plugin.eq_ignore_ascii_case("reset") || plugin.eq_ignore_ascii_case("none") {
+                    edit_owners(|o| {
+                        o.owners.remove(&word);
+                    });
+                    return vec![format!("\u{a7}a/{word} goes back to the first plugin that registered it ({}).", owner_of(&owners(), &word).map_or("none".to_owned(), |id| shown(&id)))];
+                }
+                let Some(id) = id_of(&plugin) else {
+                    return vec![format!("\u{a7}cNo plugin named {plugin} is running.")];
+                };
+                let has = WORD_PLUGINS.read().unwrap_or_else(|e| e.into_inner()).get(&word).is_some_and(|l| l.contains(&id));
+                if !has {
+                    return vec![format!("\u{a7}c{} has no /{word}.", shown(&id))];
+                }
+                let name = shown(&id);
+                edit_owners(|o| {
+                    o.owners.insert(word.clone(), name.clone());
+                    if let Some(off) = o.disabled.get_mut(&name.to_ascii_lowercase()) {
+                        off.remove(&word);
+                    }
+                });
+                vec![format!("\u{a7}a/{word} is now answered by {name}\u{a7}7 (saved in {OWNERS_FILE}).")]
+            }
+            _ => vec!["\u{a7}cUsage: /commands owner <command> <plugin|reset>".to_owned()],
+        },
+        "disable" | "enable" | "off" | "on" => match (a, b) {
+            (Some(plugin), Some(word)) => {
+                let word = word.trim_start_matches('/').to_ascii_lowercase();
+                let Some(id) = id_of(&plugin) else {
+                    return vec![format!("\u{a7}cNo plugin named {plugin} is running.")];
+                };
+                let name = shown(&id);
+                let off = matches!(action.as_str(), "disable" | "off");
+                edit_owners(|o| {
+                    let set = o.disabled.entry(name.to_ascii_lowercase()).or_default();
+                    if off {
+                        set.insert(word.clone());
+                    } else {
+                        set.remove(&word);
+                    }
+                });
+                let now = owner_of(&owners(), &word).map_or("nobody".to_owned(), |id| shown(&id));
+                vec![format!("\u{a7}a{name} {} /{word}\u{a7}7; it is answered by {now} now.", if off { "no longer answers" } else { "answers" })]
+            }
+            _ => vec![format!("\u{a7}cUsage: /commands {action} <plugin> <command>")],
+        },
+        "reload" => {
+            *OWNERS.write().unwrap_or_else(|e| e.into_inner()) = Some(read_owners());
+            vec![format!("\u{a7}a{OWNERS_FILE} read again.")]
+        }
+        _ => vec!["\u{a7}7/commands \u{a7}8[\u{a7}7conflicts\u{a7}8|\u{a7}7who <cmd>\u{a7}8|\u{a7}7owner <cmd> <plugin|reset>\u{a7}8|\u{a7}7disable <plugin> <cmd>\u{a7}8|\u{a7}7enable <plugin> <cmd>\u{a7}8|\u{a7}7reload\u{a7}8]".to_owned()],
+    }
+}
 
 /// Whether a plugin took `word` (the console then leaves it to the plugin, not the engine's own).
 pub(in crate::game) fn plugin_word(word: &str) -> bool {

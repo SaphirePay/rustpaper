@@ -3131,7 +3131,16 @@ impl Event for InventoryCloseEvent {
         if value.get("kind").is_some() || value.get("window").is_none() {
             return None;
         }
-        let gui = OPEN_INVENTORIES.lock().unwrap_or_else(|e| e.into_inner()).remove(value["uuid"].as_str()?)?;
+        let uuid = value["uuid"].as_str()?;
+        // The close of a window the GUI the player has now replaced: an event without that GUI, which stays open.
+        let held = crate::GUI_WINDOWS.lock().unwrap_or_else(|e| e.into_inner()).get(uuid).copied();
+        if let (Some(held), Some(closing)) = (held, value["window"].as_i64())
+            && held != closing
+        {
+            return Some(Self { value: value.clone(), cancelled: crate::event::prior_cancelled(), ..Default::default() });
+        }
+        crate::GUI_WINDOWS.lock().unwrap_or_else(|e| e.into_inner()).remove(uuid);
+        let gui = OPEN_INVENTORIES.lock().unwrap_or_else(|e| e.into_inner()).remove(uuid)?;
         Some(Self { value: value.clone(), cancelled: crate::event::prior_cancelled(), gui: Some(gui) })
     }
 }

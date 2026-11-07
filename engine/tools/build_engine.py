@@ -74,7 +74,7 @@ def sync(fresh, stage):
 
 
 def stage_key(commit, bundles, tool):
-    """What the stage is made from, as one hash: the commit, every bundle file, the mixins tool and dim_patch."""
+    """What the stage is made from, as one hash: the commit, every bundle file, the mixins tool, dim_patch and the family rows."""
     import hashlib
     digest = hashlib.sha256(commit.encode())
     for bundle in bundles:
@@ -84,6 +84,10 @@ def stage_key(commit, bundles, tool):
             digest.update(path.read_bytes())
     for path in (tool, ROOT / 'tools' / 'dim_patch.py'):
         digest.update(path.read_bytes() if path.is_file() else b'-')
+    # The family rows dim_patch applies: a pulled row changes the stage too.
+    for path in sorted((ROOT / 'family').glob('*_engine.py')):
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
     return digest.hexdigest()
 
 

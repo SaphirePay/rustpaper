@@ -262,6 +262,22 @@ pub fn legacy(text: &str) -> Component {
             break;
         };
         flush(&mut current, &style, &mut parts);
+        // `§x§R§R§G§G§B§B`: a hex color, as CraftChatMessage reads it (titles, `sendMessage(String)`).
+        if code == 'x' {
+            let mut ahead = chars.clone();
+            let hex: Option<String> = (0..6)
+                .map(|_| match (ahead.next(), ahead.next()) {
+                    (Some('\u{a7}'), Some(digit)) if digit.is_ascii_hexdigit() => Some(digit.to_ascii_uppercase()),
+                    _ => None,
+                })
+                .collect();
+            if let Some(hex) = hex {
+                chars = ahead;
+                style.clear();
+                style.insert("color".to_owned(), json!(format!("#{hex}")));
+                continue;
+            }
+        }
         if let Some((_, name)) = COLORS.iter().find(|(key, _)| *key == code) {
             style.clear();
             style.insert("color".to_owned(), json!(name));
@@ -297,6 +313,14 @@ mod tests {
         assert_eq!(text.0["extra"][1], json!({ "text": "RPC", "color": "gold" }));
         assert_eq!(text.0["extra"][3], json!({ "text": "Hi ", "color": "green" }), "a color ends the bold before it");
         assert_eq!(text.0["extra"][4]["bold"], json!(true));
+    }
+
+    #[test]
+    fn legacy_hex_colors() {
+        let text = legacy("\u{a7}x\u{a7}5\u{a7}d\u{a7}a\u{a7}d\u{a7}e\u{a7}2\u{a7}lA\u{a7}x\u{a7}1\u{a7}a\u{a7}b\u{a7}c\u{a7}9\u{a7}cB");
+        assert_eq!(text.0["extra"][0], json!({ "text": "A", "color": "#5DADE2", "bold": true }));
+        assert_eq!(text.0["extra"][1], json!({ "text": "B", "color": "#1ABC9C" }));
+        assert_eq!(legacy("\u{a7}xno").plain(), "no", "a bare x is no hex");
     }
 
     #[test]

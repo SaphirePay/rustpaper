@@ -34,9 +34,20 @@ fn fire(event: &str, payload: Value) -> i32 {
 }
 
 /// `fire`, with the game open to the listeners' questions.
-fn fire_in(game: &mut Game<'_>, event: &str, payload: Value) -> i32 {
+fn fire_in(game: &mut Game<'_>, event: &str, mut payload: Value) -> i32 {
     if !runtime::listening() {
         return 0;
+    }
+    if event == "command"
+        && let Some(owners) = super::paper_events::command_route(&mut payload)
+    {
+        if owners.is_empty() {
+            if let Some(player) = payload["player"]["uuid"].as_str().or(payload["player"].as_str()) {
+                runtime::push(json!({ "op": "tell", "player": player, "text": "\u{a7}cUnknown or disabled command." }).to_string());
+            }
+            return 0;
+        }
+        return runtime::lend(game, || runtime::fire_only(event, &payload.to_string(), &owners));
     }
     runtime::lend(game, || runtime::fire(event, &payload.to_string()))
 }
@@ -679,6 +690,9 @@ fn take_commands() {
         }
         let usage = value["text"].as_str().unwrap_or_default();
         let level = u8::try_from(value["level"].as_u64().unwrap_or(0)).unwrap_or(4);
+        if let Some(word) = usage.split_whitespace().next().filter(|w| !w.contains(':')) {
+            super::paper_events::note_word(word, value["owner"].as_str());
+        }
         api::register_plugin_command(usage, level, Arc::new(|game, player, line| {
             fire_in(game, "command", json!({ "player": player_json(player), "line": line }));
             flush(game, true);
@@ -1029,6 +1043,20 @@ pub(in crate::game) fn start_mods(mods: &[(String, String)]) {
         runtime::push(json!({ "op": "tell", "player": uuid(player.uuid), "text": text }).to_string());
         flush(game, true);
     }));
+    // `/plugin list|enable|disable|reload NAME` (operators): turn plugins on and off without a restart.
+    api::register_command("plugin [args:text]", 4, Arc::new(|game, player, line| {
+        for text in plugin_word(line, Some(player.uuid)) {
+            runtime::push(json!({ "op": "tell", "player": uuid(player.uuid), "text": text }).to_string());
+        }
+        flush(game, true);
+    }));
+    // `/commands ...` (operators): which plugin answers a command several have, and commands kept off.
+    api::register_command("commands [args:text]", 4, Arc::new(|game, player, line| {
+        for text in super::paper_events::commands_word(line) {
+            runtime::push(json!({ "op": "tell", "player": uuid(player.uuid), "text": text }).to_string());
+        }
+        flush(game, true);
+    }));
     for word in ["plugins", "pl"] {
         api::register_command(word, 0, Arc::new(|game, player, _line| {
             for text in plugins_lines() {
@@ -1036,6 +1064,56 @@ pub(in crate::game) fn start_mods(mods: &[(String, String)]) {
             }
             flush(game, true);
         }));
+    }
+}
+
+/// `/plugin ...` (a player's or the console's): what to answer now. Enable and disable happen at the tick's end
+/// and tell `who` (None: the log) how it went.
+fn plugin_word(line: &str, who: Option<u128>) -> Vec<String> {
+    let mut words = line.trim_start_matches('/').split_whitespace().skip(1);
+    let (action, name) = (words.next().unwrap_or("list").to_ascii_lowercase(), words.next());
+    use crate::game::paper_fam_core::hot_reload;
+    match (action.as_str(), name) {
+        ("list" | "ls", _) => hot_reload::listing(),
+        ("enable" | "on", Some(name)) => {
+            hot_reload::ask_toggle(true, name, who);
+            vec![]
+        }
+        ("disable" | "off", Some(name)) => {
+            hot_reload::ask_toggle(false, name, who);
+            vec![]
+        }
+        ("reload" | "swap", Some(name)) => {
+            hot_reload::ask(name);
+            vec![format!("\u{a7}aReloading {name} from its file at the end of this tick.")]
+        }
+        _ => vec![
+            "\u{a7}f/plugin list \u{a7}7- what runs and what is disabled".to_owned(),
+            "\u{a7}f/plugin disable <name> \u{a7}7- turn a plugin off (it stays off after a restart)".to_owned(),
+            "\u{a7}f/plugin enable <name> \u{a7}7- turn it back on".to_owned(),
+            "\u{a7}f/plugin reload <name> \u{a7}7- load it again from its file".to_owned(),
+        ],
+    }
+}
+
+/// A line for one player (None: the log only), sent at once: what a `/plugin` toggle did.
+pub(in crate::game) fn tell_now(game: &mut Game<'_>, who: Option<u128>, text: &str) {
+    match who {
+        Some(player) => {
+            runtime::push(json!({ "op": "tell", "player": uuid(player), "text": text }).to_string());
+            flush(game, false);
+        }
+        None => {
+            let (mut plain, mut code) = (String::new(), false);
+            for c in text.chars() {
+                match (code, c) {
+                    (true, _) => code = false,
+                    (false, '\u{a7}') => code = true,
+                    _ => plain.push(c),
+                }
+            }
+            log::info!("{plain}");
+        }
     }
 }
 
@@ -1062,6 +1140,11 @@ pub(in crate::game) fn console_engine_word(line: &str) -> Option<Vec<String>> {
         "version" | "ver" | "about" if words.clone().next().is_none() => {
             Some(crate::game::paper_fam_core::engine_lines().to_vec())
         }
+        "plugin" => {
+            let lines = plugin_word(line, None);
+            Some(if lines.is_empty() { vec!["Done at the end of this tick: see the log.".to_owned()] } else { lines })
+        }
+        "commands" => Some(super::paper_events::commands_word(line).into_iter().map(|l| crate::game::paper_fam_core::strip_section_codes(&l)).collect()),
         "hotswap" => Some(vec![match words.next() {
             Some(name) => {
                 crate::game::paper_fam_core::hot_reload::ask(name);

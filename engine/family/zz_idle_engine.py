@@ -1,4 +1,4 @@
-# What a server holds with nobody on it. Measured with tools/idle_mem.py against a build without the rows.
+# What a server holds with nobody on it. Measured with tools/idle_mem.py against a build without this table.
 EDITS = [
     # The allocator's free pages go back after boot, whose parsing peaks far above what it keeps, and again at a pause.
     ('horizon-threads/src/lib.rs', """/// Give back to the OS the memory the allocator holds free, after something

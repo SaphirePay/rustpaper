@@ -3143,6 +3143,17 @@ pub(in crate::game) fn interaction_touched(game: &mut Game<'_>, host: &crate::ga
     saved.insert(key.into(), Tag::compound([("player", Tag::IntArray(horizon_client::lan::playerdata::uuid_ints(uuid).to_vec())), ("timestamp", Tag::Long(now))]));
 }
 
+/// A server-side `Interaction` (kept in `others`, so the game's own target lookup doesn't see it): its box
+/// from the saved `width` and `height`, as `Interaction.getDimensions` (1 x 1 by default), feet-centred.
+pub(in crate::game) fn interaction_box(game: &Game<'_>, id: i32) -> Option<horizon_core::geometry::Aabb> {
+    let id = u32::try_from(id).ok()?;
+    let other = game.others.iter().find(|other| other.id == id && other.kind == "minecraft:interaction")?;
+    let saved = game.persist_raw(id);
+    let size = |key: &str| saved.and_then(|tag| tag.get(key)).and_then(tag_number).unwrap_or(1.0);
+    let (half, height, at) = (size("width") / 2.0, size("height"), other.position);
+    Some(horizon_core::geometry::Aabb::new(Vec3::new(at.x - half, at.y, at.z - half), Vec3::new(at.x + half, at.y + height, at.z + half)))
+}
+
 pub(in crate::game) fn podium(game: &Game<'_>) -> Option<Vec3> {
     let id = game.dragon.as_ref()?.id;
     let Some(Tag::List(at)) = game.persist_raw(id)?.get(PLUGIN)?.get("podium") else {

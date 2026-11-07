@@ -1,5 +1,5 @@
 # Server RAM (owner, 11-03: more players on less RAM). Each row's effect is measured with tools/perf_bench.py
-# (1, 10, 25, 50, 100 bots, no plugins) against a build without the rows.
+# (1, 10, 25, 50, 100 bots, no plugins) against a build without this table.
 LIB = 'horizon-client/src/'
 EDITS = [
     # Where the memory is: `horizon-report` now gives each level's chunk bytes beside the process's RSS.

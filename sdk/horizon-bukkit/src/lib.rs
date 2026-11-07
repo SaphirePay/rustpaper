@@ -899,6 +899,9 @@ pub struct Inventory {
 static NEXT_INVENTORY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 /// Who has which GUI open, for the click events.
 pub(crate) static OPEN_INVENTORIES: Mutex<BTreeMap<String, Inventory>> = Mutex::new(BTreeMap::new());
+/// The window number each of those GUIs opened as: a close the client sends late for the window before (one GUI
+/// opened over another) is that window's, not the GUI's that replaced it.
+pub(crate) static GUI_WINDOWS: Mutex<BTreeMap<String, i64>> = Mutex::new(BTreeMap::new());
 
 impl Inventory {
     /// bukkit: org/bukkit/Bukkit.createInventory, org/bukkit/Server.createInventory
@@ -1058,6 +1061,12 @@ impl Player {
         let answer = query(json!({ "op": "open_menu", "uuid": self.uuid, "rows": inventory.contents.len() / 9, "title": adventure::legacy(&inventory.title).0, "items": inventory.items() }));
         if !answer.is_null() {
             OPEN_INVENTORIES.lock().unwrap_or_else(|e| e.into_inner()).insert(self.uuid.clone(), inventory.clone());
+            let mut windows = GUI_WINDOWS.lock().unwrap_or_else(|e| e.into_inner());
+            match answer.as_i64() {
+                Some(window) => windows.insert(self.uuid.clone(), window),
+                None => windows.remove(&self.uuid),
+            };
+            drop(windows);
             fam_items::hold_gui(self, &answer);
         }
     }

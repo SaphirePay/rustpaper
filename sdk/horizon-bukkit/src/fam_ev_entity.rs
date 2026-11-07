@@ -4785,6 +4785,9 @@ pub struct EntityExplodeEvent {
     blocks: Vec<Block>,
     power: f32,
     cancelled: bool,
+    /// What the listener was given: unchanged, nothing goes back to the engine (one listener per plugin sent the
+    /// whole list back for every blast, and the last one's undid an earlier one's edits).
+    given: (usize, f32, bool),
 }
 
 impl EntityExplodeEvent {
@@ -4843,11 +4846,20 @@ impl Event for EntityExplodeEvent {
             return None;
         }
         let world = world_of(value);
-        let blocks = value["blocks"].as_array().into_iter().flatten().filter_map(|pos| block_at(&world, pos)).collect();
-        Some(Self { value: value.clone(), blocks, power: value["yield"].as_f64().unwrap_or(1.0) as f32, cancelled: crate::event::prior_cancelled() })
+        let blocks: Vec<Block> = value["blocks"].as_array().into_iter().flatten().filter_map(|pos| block_at(&world, pos)).collect();
+        let (power, cancelled) = (value["yield"].as_f64().unwrap_or(1.0) as f32, crate::event::prior_cancelled());
+        Some(Self { given: (blocks.len(), power, cancelled), value: value.clone(), blocks, power, cancelled })
     }
     fn finish(&self) {
+        // Listeners only remove blocks (or cancel, or change the yield): the same count, yield and cancel is the list
+        // as it came, and the engine keeps what it has.
+        if (self.blocks.len(), self.power, self.cancelled) == self.given {
+            return;
+        }
         let blocks: Vec<[i32; 3]> = self.blocks.iter().map(|block| [block.get_x(), block.get_y(), block.get_z()]).collect();
+        // The listeners after this one start from this list, not the first one.
+        crate::event::carry("blocks", json!(blocks));
+        crate::event::carry("yield", json!(self.power));
         query(json!({ "op": "ee_blast", "blocks": blocks, "cancelled": self.cancelled, "yield": self.power }));
     }
 }

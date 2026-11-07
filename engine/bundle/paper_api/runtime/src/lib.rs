@@ -246,6 +246,12 @@ struct Route {
     free: bool,
 }
 
+impl Route {
+    fn copy(&self) -> Route {
+        Route { slot: self.slot, bukkit: self.bukkit, name: self.name.clone(), callback: self.callback, owner: self.owner.clone(), free: self.free }
+    }
+}
+
 /// Whether a mod's manifest (its `plugin.yml`, or a mod's JSON) says it is safe on Folia's region threads.
 fn folia_supported(manifest: &str) -> bool {
     manifest.lines().any(|line| {
@@ -326,7 +332,17 @@ pub fn adopt_late() {
 }
 
 extern "C" fn call(json: *const u8, length: usize) {
-    push(text(json, length).to_owned());
+    let action = text(json, length);
+    // A command a plugin adds is taken after its start is over: it carries whose it is.
+    if action.contains("\"register_command\"")
+        && let Some(owner) = current_owner()
+        && let Ok(mut value) = serde_json::from_str::<serde_json::Value>(action)
+    {
+        value["owner"] = serde_json::Value::String(owner);
+        push(value.to_string());
+        return;
+    }
+    push(action.to_owned());
 }
 
 /// Queues an action for the game to carry out at a safe moment.
@@ -370,22 +386,53 @@ pub fn open_folder(folder: &Path) -> (Vec<(String, String)>, Vec<String>) {
         return (manifests, errors);
     };
     let loaded = folder.join(".loaded");
-    let generation = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+    let _ = fs::create_dir_all(&loaded);
+    // Each library's copy is named by its file's size and change time: a library unchanged since the last start
+    // keeps last start's copy (no 70 MB of copies at every start), a changed one gets a new name. Copies of no
+    // library here (old versions, hot reload's) go.
+    let libraries: Vec<(PathBuf, String, PathBuf)> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_library(p))
+        .map(|path| {
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let stamp = fs::metadata(&path).map_or((0, 0), |m| {
+                let changed = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+                (m.len(), changed)
+            });
+            let copy = loaded.join(format!("boot-{}-{}-{name}", stamp.0, stamp.1));
+            (path, name, copy)
+        })
+        .collect();
+    // Kept in the folder's own order (read_dir's), as before: the loader breaks ties by it.
     if let Ok(old) = fs::read_dir(&loaded) {
-        for file in old.flatten() {
-            let _ = fs::remove_file(file.path());
+        for file in old.flatten().map(|f| f.path()) {
+            if !libraries.iter().any(|(_, _, copy)| *copy == file) {
+                let _ = fs::remove_file(file);
+            }
         }
     }
-    let _ = fs::create_dir_all(&loaded);
+    // Copied (when needed) and opened side by side: the slow part of a start with many plugins. Nothing runs yet.
+    let opened: Vec<Result<Loaded, String>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = libraries
+            .iter()
+            .map(|(path, _, copy)| {
+                scope.spawn(move || {
+                    let fresh = fs::metadata(copy).is_ok_and(|m| fs::metadata(path).is_ok_and(|p| p.len() == m.len()));
+                    if !fresh {
+                        let part = copy.with_extension("part");
+                        fs::copy(path, &part).map_err(|e| format!("{}: {e}", path.display()))?;
+                        fs::rename(&part, copy).map_err(|e| format!("{}: {e}", path.display()))?;
+                    }
+                    open(copy)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err("a plugin library panicked while it loaded".to_owned()))).collect()
+    });
     let mut mods = MODS.write().unwrap_or_else(|e| e.into_inner());
-    for path in entries.flatten().map(|e| e.path()).filter(|p| is_library(p)) {
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let copy = loaded.join(format!("{generation}-{name}"));
-        if let Err(e) = fs::copy(&path, &copy) {
-            errors.push(format!("{}: {e}", path.display()));
-            continue;
-        }
-        match open(&copy) {
+    for ((_, name, _), result) in libraries.into_iter().zip(opened) {
+        match result {
             Ok(module) => {
                 manifests.push((module.manifest.clone(), name));
                 mods.push(module);
@@ -641,17 +688,47 @@ pub fn fire(event: &str, payload: &str) -> i32 {
     fire_carried(event, payload).0
 }
 
+/// The mod whose code this thread is running: the listener's, else the one starting (its `onEnable`).
+pub fn current_owner() -> Option<String> {
+    let listening = CALLING.with(|calling| {
+        let route = calling.get();
+        // SAFETY: set only for the length of a listener's call, while its route list is held.
+        (!route.is_null()).then(|| unsafe { (*route).owner.clone() })
+    });
+    listening.or_else(|| watch::owners().pop())
+}
+
+/// A loaded mod's name as its manifest (`plugin.yml`) gives it, by id.
+pub fn name_of(id: &str) -> Option<String> {
+    let mods = MODS.read().unwrap_or_else(|e| e.into_inner());
+    let module = mods.iter().find(|m| m.id == id)?;
+    serde_json::from_str::<serde_json::Value>(&module.manifest).ok().and_then(|v| v["name"].as_str().map(str::to_owned)).or_else(|| Some(id.to_owned()))
+}
+
+/// `fire`, heard only by the listeners of the mods in `owners` (one command's owner, say).
+pub fn fire_only(event: &str, payload: &str, owners: &[String]) -> i32 {
+    fire_where(event, payload, &|route| owners.iter().any(|o| *o == route.owner)).0
+}
+
 /// `fire`, with the payload as the listeners left it, if any of them changed it.
 pub fn fire_carried(event: &str, payload: &str) -> (i32, Option<String>) {
+    fire_where(event, payload, &|_| true)
+}
+
+fn fire_where(event: &str, payload: &str, keep: &dyn Fn(&Route) -> bool) -> (i32, Option<String>) {
     // The libraries stay loaded for as long as their function pointers are in use.
     let _in_use = IN_USE.read().unwrap_or_else(|e| e.into_inner());
     let list = ROUTES.read().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|routes| routes.get(event).cloned());
-    let Some(list) = list else {
+    let Some(mut list) = list else {
         return (0, None);
     };
-    // Turns only while a listener of a plugin that isn't Folia-supported is in the run: Folia-supported ones
-    // run on every region thread at once, as on Folia.
-    let _turn = (!list.iter().all(|route| route.free)).then(turns::take);
+    if !list.iter().all(keep) {
+        let kept: Vec<Route> = list.iter().filter(|route| keep(route)).map(Route::copy).collect();
+        list = std::sync::Arc::new(kept);
+    }
+    // Turns only around the listeners of plugins that aren't Folia-supported: Folia-supported ones run on every
+    // region thread at once, as on Folia. (A turn for the whole run made one such listener hold every region's
+    // blasts in a line, one region at a time.)
     // A listener may fire another event: this run's changes are kept apart from that one's.
     let outer = PATCHES.with(|patches| std::mem::take(&mut *patches.borrow_mut()));
     let (mut answer, mut text) = (0, None::<String>);
@@ -660,7 +737,9 @@ pub fn fire_carried(event: &str, payload: &str) -> (i32, Option<String>) {
         let now = text.as_deref().unwrap_or(payload);
         let started = profiling.then(|| profile::enter(&route.owner));
         let watched = watch::enter(|| watch::Doing::Listener(list.clone(), at));
+        let turn = (!route.free).then(turns::take);
         let said = calling(route, || (route.callback)(route.name.as_ptr(), route.name.len(), now.as_ptr(), now.len()));
+        drop(turn);
         watch::leave(watched);
         if let Some(started) = started {
             profile::leave(event, started);
@@ -754,7 +833,7 @@ pub mod watch {
     }
 
     /// The plugins the server thread is inside.
-    fn owners() -> Vec<String> {
+    pub(crate) fn owners() -> Vec<String> {
         let Ok(now) = NOW.try_lock() else {
             return Vec::new();
         };

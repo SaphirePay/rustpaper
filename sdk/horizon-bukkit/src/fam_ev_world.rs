@@ -2602,7 +2602,11 @@ impl Event for StructureGrowEvent {
 }
 
 /// Who just used flint or a fire charge, and the tick: fire lit that way can make a portal.
-static IGNITER: Mutex<Option<(Player, u64)>> = Mutex::new(None);
+thread_local! {
+    /// Per thread: an ignition and its prime happen on one game thread (the server's or a region's), and two
+    /// regions' at once mustn't trade players.
+    static IGNITER: std::cell::RefCell<Option<(Player, u64)>> = const { std::cell::RefCell::new(None) };
+}
 
 /// bukkit: org/bukkit/event/world/PortalCreateEvent
 #[derive(Clone, Debug)]
@@ -2663,14 +2667,14 @@ impl Event for PortalCreateEvent {
         if matches!(text(&value["stack"], "item"), "minecraft:flint_and_steel" | "minecraft:fire_charge")
             && let Some(player) = player_of(value)
         {
-            *IGNITER.lock().unwrap_or_else(|e| e.into_inner()) = Some((player, crate::scheduler::now()));
+            IGNITER.with(|igniter| *igniter.borrow_mut() = Some((player, crate::scheduler::now())));
         }
         Some(Answer::Pass)
     }
     fn read(value: &Value) -> Option<Self> {
         value["blocks"].as_array()?;
         let now = crate::scheduler::now();
-        let igniter = IGNITER.lock().unwrap_or_else(|e| e.into_inner()).take().filter(|(_, tick)| *tick == now).map(|(player, _)| player);
+        let igniter = IGNITER.with(|igniter| igniter.borrow_mut().take()).filter(|(_, tick)| *tick == now).map(|(player, _)| player);
         Some(Self { value: value.clone(), igniter, cancelled: crate::event::prior_cancelled() })
     }
     fn answer(&self) -> Answer {
@@ -4080,7 +4084,11 @@ struct Blast {
     result: &'static str,
 }
 
-static BLAST: Mutex<Blast> = Mutex::new(Blast { radius: 1.0, result: "DESTROY" });
+thread_local! {
+    /// Per thread, as a blast's hooks all run on the game thread it goes off on: two regions' blasts at once
+    /// (Folia-supported plugins take no turn) mustn't read each other's.
+    static BLAST: std::cell::Cell<Blast> = const { std::cell::Cell::new(Blast { radius: 1.0, result: "DESTROY" }) };
+}
 /// bukkit: org/bukkit/event/block/BlockExplodeEvent
 ///
 /// A blast no entity set off: an entity's is `EntityExplodeEvent`.
@@ -4138,7 +4146,9 @@ impl BlockExplodeEvent {
 }
 
 /// Whether an entity set off the blast under way: `ee_detonate` comes first and says.
-static BLAST_BY_ENTITY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+thread_local! {
+    static BLAST_BY_ENTITY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 impl Event for BlockExplodeEvent {
     const HOOK: &'static str = "ew_explosion";
@@ -4147,7 +4157,7 @@ impl Event for BlockExplodeEvent {
     }
     fn intercept(value: &Value) -> Option<Answer> {
         if value["ee_blast"] == true {
-            BLAST_BY_ENTITY.store(!value["entity"].is_null(), std::sync::atomic::Ordering::Relaxed);
+            BLAST_BY_ENTITY.set(!value["entity"].is_null());
             return Some(Answer::Pass);
         }
         if let Some(radius) = value["radius"].as_f64() {
@@ -4157,18 +4167,18 @@ impl Event for BlockExplodeEvent {
                 "TriggerBlock" => "TRIGGER_BLOCK",
                 _ => "DESTROY",
             };
-            *BLAST.lock().unwrap_or_else(|e| e.into_inner()) = Blast { radius, result };
+            BLAST.set(Blast { radius, result });
             return Some(Answer::Pass);
         }
         None
     }
     fn read(value: &Value) -> Option<Self> {
-        if BLAST_BY_ENTITY.load(std::sync::atomic::Ordering::Relaxed) {
+        if BLAST_BY_ENTITY.get() {
             return None;
         }
         let world = world_of(value);
         let blocks: Vec<Block> = value["blocks"].as_array().into_iter().flatten().filter_map(|pos| block_at(&world, pos)).collect();
-        let blast = *BLAST.lock().unwrap_or_else(|e| e.into_inner());
+        let blast = BLAST.get();
         Some(Self { value: value.clone(), listed: blocks.len(), blocks, blast, keeps: None, cancelled: crate::event::prior_cancelled() })
     }
     fn answer(&self) -> Answer {

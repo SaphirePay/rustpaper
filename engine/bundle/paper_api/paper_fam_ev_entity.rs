@@ -2150,15 +2150,47 @@ pub(in crate::game) fn no_totem(game: &mut Game<'_>) {
     }
 }
 
+/// A blast's state, one for each game thread, with a `Mutex`'s `lock()`: a blast's hooks all run on the thread
+/// it goes off on (the server's or a region's), and several regions blow up at once. One shared state let one
+/// region's blast take another's answer (its blocks, its yield, who set it off).
+pub(in crate::game) struct PerThread<T: 'static>(&'static std::thread::LocalKey<&'static Mutex<T>>);
+
+impl<T> PerThread<T> {
+    pub(in crate::game) fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'static, T>> {
+        self.0.with(|state| *state).lock()
+    }
+}
+
+/// `PerThread` for a flag, with an `AtomicBool`'s calls.
+pub(in crate::game) struct PerThreadFlag(&'static std::thread::LocalKey<std::cell::Cell<bool>>);
+
+impl PerThreadFlag {
+    fn swap(&self, value: bool, _: Ordering) -> bool {
+        self.0.with(|flag| flag.replace(value))
+    }
+    fn store(&self, value: bool, _: Ordering) {
+        self.0.with(|flag| flag.set(value));
+    }
+}
+
+thread_local! {
+    static BLAST_HERE: &'static Mutex<Option<(bool, Vec<[i32; 3]>, f32)>> = Box::leak(Box::new(Mutex::new(None)));
+    static YIELD_HERE: &'static Mutex<Option<f32>> = Box::leak(Box::new(Mutex::new(None)));
+    static AGAIN_BLOCK_HERE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EXPLODER_HERE: &'static Mutex<Option<(u32, String)>> = Box::leak(Box::new(Mutex::new(None)));
+    static PRIMED_HERE: &'static Mutex<Vec<(u32, [f64; 3])>> = Box::leak(Box::new(Mutex::new(Vec::new())));
+    static BLAST_KIND_HERE: &'static Mutex<(&'static str, f32)> = Box::leak(Box::new(Mutex::new(("DESTROY", 1.0))));
+}
+
 /// What a listener of `EntityExplodeEvent` left: refused, the blocks, the yield.
-static BLAST: Mutex<Option<(bool, Vec<[i32; 3]>, f32)>> = Mutex::new(None);
+static BLAST: PerThread<Option<(bool, Vec<[i32; 3]>, f32)>> = PerThread(&BLAST_HERE);
 /// The yield for this explosion's blocks, when a listener changed it.
-static YIELD: Mutex<Option<f32>> = Mutex::new(None);
-static AGAIN_BLOCK: AtomicBool = AtomicBool::new(false);
+static YIELD: PerThread<Option<f32>> = PerThread(&YIELD_HERE);
+static AGAIN_BLOCK: PerThreadFlag = PerThreadFlag(&AGAIN_BLOCK_HERE);
 /// What's blowing up, as far as the game has said: (its id, its kind).
-static EXPLODER: Mutex<Option<(u32, String)>> = Mutex::new(None);
+pub(in crate::game) static EXPLODER: PerThread<Option<(u32, String)>> = PerThread(&EXPLODER_HERE);
 /// The primed TNT as this tick's fuses burn down, by where it is.
-static PRIMED: Mutex<Vec<(u32, [f64; 3])>> = Mutex::new(Vec::new());
+static PRIMED: PerThread<Vec<(u32, [f64; 3])>> = PerThread(&PRIMED_HERE);
 
 fn exploder_now() -> Option<(u32, String)> {
     EXPLODER.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -2239,7 +2271,7 @@ pub(in crate::game) fn decorations(game: &mut Game<'_>, center: [f64; 3], diamet
     true
 }
 /// What the explosion under way does to blocks: `ExplosionResult`, and `Explosion.yield` at the start.
-static BLAST_KIND: Mutex<(&'static str, f32)> = Mutex::new(("DESTROY", 1.0));
+static BLAST_KIND: PerThread<(&'static str, f32)> = PerThread(&BLAST_KIND_HERE);
 
 /// `EntityExplodeEvent`, as the game has its blocks: they're the game's own list, edited in place.
 pub(in crate::game) fn detonate(game: &mut Game<'_>, center: [f64; 3], blocks: &mut Vec<[i32; 3]>) -> bool {

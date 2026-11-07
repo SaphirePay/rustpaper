@@ -8481,6 +8481,13 @@ impl BukkitWorker {
 /// A command of this plugin, as `PluginCommand.execute` runs it. `None` if it has no such word, or
 /// a completer of its own is holding the list.
 fn run_here(sender: &CommandSender, label: &str, args: &[&str]) -> Option<bool> {
+    // `other:word` names another plugin: its command, not this plugin's word of the same name.
+    if let Some((space, _)) = label.rsplit_once(':') {
+        let mine = crate::DESCRIPTION.get().and_then(|d| d["name"].as_str().map(str::to_ascii_lowercase));
+        if mine.as_deref() != Some(space.to_ascii_lowercase().as_str()) {
+            return None;
+        }
+    }
     let word = label.rsplit(':').next().unwrap_or(label).to_lowercase();
     let owner = crate::ALIASES.lock().unwrap_or_else(|e| e.into_inner()).get(&word).cloned()?;
     if !plugin_is_enabled() {

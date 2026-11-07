@@ -154,6 +154,26 @@ EXTRA = [
 EXTRA += FAMILIES['EXTRA']
 
 
+# Hooks whose listeners only answer the payload's `ee_refused` (the SDK's `verdict`), worked out by the game: asked of
+# every plugin, they cost a round trip each time for an answer the game already had.
+ENGINE_DECIDED = {
+    'ee_hit_block': "EntityExplodeEvent's say for each block a blast takes is whether a listener set the yield, which the game holds: asking every plugin for each block (hundreds a TNT) made a TNT field take a whole tick per blast.",
+    'ee_explode': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_item': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_launch': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_hit': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_portal': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_unleash': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_tamed': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_cloud': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_spawn_round': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    'ee_no_wear': "Every event on this hook answers from `ee_refused` alone (`verdict` first: tools' echoes check), so its listeners never ran here; the round trip to each plugin is gone.",
+    # Triggers whose payload no listener reads: only the game's own work in it (the expression) is kept.
+    'ee_detonate': "The blast's EntityExplodeEvent went out inside `detonate`; no listener reads this `ee_done` after it (BlockExplodeEvent read it as a blast with no blocks), so every blast cost each plugin a second round trip for nothing.",
+    'ee_blast_tnt': "`note_tnt` notes where each primed TNT is for the blasts that follow; listeners only pass `ee_why`, so asking each plugin every tick (the whole list of primed TNT) was work for nothing.",
+}
+
+
 def raws():
     """The rows as gen_bundle.py's injections."""
     out = list(EXTRA)
@@ -170,6 +190,19 @@ def raws():
             body = f'        crate::game::paper_bridge::on_trigger(game, "{hook}", payload);\n'
             tail = ''
         code = f"fn paper_hook_ev_{hook}(game: &mut crate::game::Game<'_>{head}){result} {{\n    if crate::game::paper_bridge::hears(\"{hook}\") {{\n        let payload = serde_json::json!({{ {payload} }});\n{body}    }}\n{tail}}}\n"
+        if hook in ENGINE_DECIDED:
+            # Every listener's answer is the payload's `ee_refused`, which the game works out itself: no plugin is asked.
+            decided = payload.split(':', 1)[1].strip()
+            if cancel:
+                code = (f"fn paper_hook_ev_{hook}(game: &mut crate::game::Game<'_>{head}){result} {{\n"
+                        f"    // {ENGINE_DECIDED[hook]}\n"
+                        f"    if crate::game::paper_bridge::hears(\"{hook}\") && {decided} {{\n"
+                        f"        return ::core::ops::ControlFlow::Break({cancel[1]});\n    }}\n{tail}}}\n")
+            else:
+                code = (f"fn paper_hook_ev_{hook}(game: &mut crate::game::Game<'_>{head}){result} {{\n"
+                        f"    // {ENGINE_DECIDED[hook]}\n"
+                        f"    if crate::game::paper_bridge::hears(\"{hook}\") {{\n"
+                        f"        let _ = {decided};\n    }}\n}}\n")
         row = {'id': f'ev_{hook}', 'target': path, 'kind': 'HEAD', 'params': [('game', "&mut crate::game::Game<'_>", '&mut *self'), *names], 'code': code}
         if cancel:
             row['cancellable'] = True

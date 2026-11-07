@@ -461,7 +461,7 @@ pub(in crate::game) fn remote_line(remote: bool, line: &str) -> &str {
 }
 
 /// Text without its `§` colour codes, for the log.
-fn strip_section_codes(text: &str) -> String {
+pub(in crate::game) fn strip_section_codes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
     while let Some(c) = chars.next() {
@@ -2519,6 +2519,13 @@ pub(in crate::game) fn query(game: &mut Game<'_>, op: &str, query: &Value) -> Op
             json!(true)
         }
         "core_command_add" => {
+            let usage = query["text"].as_str().unwrap_or_default();
+            let word = usage.split_whitespace().next().unwrap_or_default().to_owned();
+            // Who registered it: one plugin answers a word several have (command-owners.yml, `/commands`). The
+            // game's tree takes no `plugin:word` words; the console and `dispatchCommand` still reach a plugin so.
+            if !word.is_empty() && !word.contains(':') {
+                crate::game::paper_events::note_word(&word, None);
+            }
             horizon_mod_runtime::push(json!({ "op": "register_command", "text": query["text"], "level": query["level"] }).to_string());
             crate::game::paper_bridge::take_commands();
             TREE_STALE.store(true, Ordering::Relaxed);
@@ -2863,6 +2870,11 @@ pub(in crate::game) fn query(game: &mut Game<'_>, op: &str, query: &Value) -> Op
 /// off. The libraries swapped out stay loaded (`horizon_mod_runtime::retire`): an async task of theirs that is
 /// still finishing never runs code that is gone. `HORIZON_HOT_RELOAD=0` turns the watching off; `/hotswap
 /// NAME` (operators) swaps one plugin now.
+///
+/// `/plugin disable NAME` turns a plugin off (and, first, every plugin that depends on it) and moves its file
+/// aside to `FILE.disabled`, so it stays off after a restart too; `/plugin enable NAME` moves it back and starts
+/// it, with the dependents it took down. Which plugin each set-aside file holds is kept in
+/// `.disabled-plugins.json` in the plugins folder.
 pub(in crate::game) mod hot_reload {
     use super::*;
     use std::collections::HashMap;
@@ -2893,6 +2905,148 @@ pub(in crate::game) mod hot_reload {
 
     static STATE: Mutex<Option<State>> = Mutex::new(None);
     static ASKED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    /// `/plugin enable|disable`: (enable, name, who asked).
+    static TOGGLES: Mutex<Vec<(bool, String, Option<u128>)>> = Mutex::new(Vec::new());
+    /// The dependents a disable took down: (the plugin they wait for, their file, their name). They start
+    /// again with it.
+    static WAITING: Mutex<Vec<(String, String, String)>> = Mutex::new(Vec::new());
+    const DISABLED: &str = ".disabled-plugins.json";
+
+    /// The set-aside plugins: (name, file without `.disabled`), from the record, then any other `*.disabled`
+    /// library in the folder (named by its file).
+    fn disabled(folder: &std::path::Path) -> Vec<(String, String)> {
+        let record: Vec<(String, String)> = std::fs::read_to_string(folder.join(DISABLED))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Map<String, Value>>(&text).ok())
+            .map(|map| map.into_iter().filter_map(|(name, file)| Some((name, file.as_str()?.to_owned()))).collect())
+            .unwrap_or_default();
+        let mut out: Vec<(String, String)> = record.into_iter().filter(|(_, file)| folder.join(format!("{file}.disabled")).is_file()).collect();
+        for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(file) = name.strip_suffix(".disabled") else { continue };
+            let library = [".dll", ".so", ".dylib"].iter().any(|e| file.ends_with(e));
+            if library && !out.iter().any(|(_, f)| f == file) {
+                let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
+                out.push((stem.trim_start_matches("lib").to_owned(), file.to_owned()));
+            }
+        }
+        out
+    }
+
+    fn save_disabled(folder: &std::path::Path, list: &[(String, String)]) {
+        let map: serde_json::Map<String, Value> = list.iter().map(|(n, f)| (n.clone(), json!(f))).collect();
+        if let Err(why) = std::fs::write(folder.join(DISABLED), serde_json::to_string_pretty(&map).unwrap_or_default()) {
+            log::warn!("[HotReload] could not write {DISABLED}: {why}");
+        }
+    }
+
+    /// `/plugin enable|disable NAME`: done at this tick's end; `who` is told how it went.
+    pub(in crate::game) fn ask_toggle(enable: bool, name: &str, who: Option<u128>) {
+        TOGGLES.lock().unwrap_or_else(|e| e.into_inner()).push((enable, name.to_owned(), who));
+    }
+
+    /// `/plugin list`: what runs (green) and what is set aside (red).
+    pub(in crate::game) fn listing() -> Vec<String> {
+        let Some(plugins) = crate::game::paper_plugins::get().filter(|p| p.dedicated) else {
+            return vec!["\u{a7}cPlugins can only be turned on and off on a dedicated server.".to_owned()];
+        };
+        let folder = plugins.folder();
+        let mut running: Vec<String> = match STATE.try_lock() {
+            Ok(guard) => guard.as_ref().map_or_else(|| plugins.loaded.iter().map(|p| p.name.clone()).collect(), |s| s.plugins.iter().map(|p| p.name.clone()).collect()),
+            Err(_) => plugins.loaded.iter().map(|p| p.name.clone()).collect(),
+        };
+        running.sort_by_key(|n| n.to_lowercase());
+        let off: Vec<String> = disabled(&folder).into_iter().map(|(n, _)| n).collect();
+        let mut lines = vec![format!("\u{a7}fPlugins: \u{a7}a{} on\u{a7}f, \u{a7}c{} off", running.len(), off.len())];
+        if !running.is_empty() {
+            lines.push(format!(" \u{a7}8- \u{a7}a{}", running.join("\u{a7}f, \u{a7}a")));
+        }
+        if !off.is_empty() {
+            lines.push(format!(" \u{a7}8- \u{a7}c{}", off.join("\u{a7}f, \u{a7}c")));
+        }
+        for (waits_for, _, name) in WAITING.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+            lines.push(format!(" \u{a7}8- \u{a7}e{name} \u{a7}7(off until {waits_for} is enabled)"));
+        }
+        lines.push("\u{a7}7/plugin enable|disable|reload <name>".to_owned());
+        lines
+    }
+
+    /// Turns `name` and its dependents off and sets its file aside.
+    fn disable(game: &mut Game<'_>, state: &mut State, folder: &std::path::Path, name: &str) -> String {
+        let Some(target) = state.plugins.iter().find(|p| p.name.eq_ignore_ascii_case(name)).cloned() else {
+            return match disabled(folder).into_iter().find(|(n, _)| n.eq_ignore_ascii_case(name)) {
+                Some((n, _)) => format!("\u{a7}e{n} is already disabled."),
+                None => format!("\u{a7}cNo plugin named {name} is running. /plugin list shows them."),
+            };
+        };
+        let (ordered, _) = plan(state, std::slice::from_ref(&target.file));
+        for plugin in ordered.iter().rev() {
+            turn_off(game, &plugin.name);
+        }
+        state.plugins.retain(|p| !ordered.iter().any(|o| o.name == p.name));
+        let dependents: Vec<&crate::game::paper_plugins::Description> = ordered.iter().filter(|p| p.name != target.name).collect();
+        {
+            let mut waiting = WAITING.lock().unwrap_or_else(|e| e.into_inner());
+            for d in &dependents {
+                waiting.push((target.name.clone(), d.file.clone(), d.name.clone()));
+            }
+        }
+        state.files.remove(&target.file);
+        let aside = folder.join(format!("{}.disabled", target.file));
+        let moved = std::fs::rename(folder.join(&target.file), &aside);
+        let mut list = disabled(folder);
+        if moved.is_ok() {
+            list.retain(|(_, f)| *f != target.file);
+            list.push((target.name.clone(), target.file.clone()));
+            save_disabled(folder, &list);
+        }
+        log::info!("[HotReload] {} disabled by command", target.full_name());
+        let mut text = format!("\u{a7}aDisabled {}.", target.name);
+        if !dependents.is_empty() {
+            let names: Vec<&str> = dependents.iter().map(|d| d.name.as_str()).collect();
+            text += &format!(" \u{a7}eAlso turned off, as they depend on it: {} (back with /plugin enable {}).", names.join(", "), target.name);
+        }
+        if let Err(why) = moved {
+            text += &format!(" \u{a7}cIts file could not be set aside ({why}): it comes back on at the next restart.");
+        }
+        text
+    }
+
+    /// Puts `name`'s file back and starts it, with the dependents its disable took down.
+    fn enable(state: &mut State, folder: &std::path::Path, name: &str) -> String {
+        if let Some(p) = state.plugins.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+            return format!("\u{a7}e{} is already enabled.", p.name);
+        }
+        let mut list = disabled(folder);
+        let wanted = name.to_lowercase();
+        let found = list.iter().position(|(n, _)| n.to_lowercase() == wanted).or_else(|| list.iter().position(|(_, f)| f.to_lowercase().contains(&wanted)));
+        let Some(at) = found else {
+            return format!("\u{a7}cNo disabled plugin named {name}. /plugin list shows them.");
+        };
+        let (plugin, file) = list.remove(at);
+        if let Err(why) = std::fs::rename(folder.join(format!("{file}.disabled")), folder.join(&file)) {
+            return format!("\u{a7}cCould not put {file} back: {why}");
+        }
+        save_disabled(folder, &list);
+        let mut files = vec![file];
+        WAITING.lock().unwrap_or_else(|e| e.into_inner()).retain(|(waits_for, dep, _)| {
+            let mine = waits_for.eq_ignore_ascii_case(&plugin);
+            if mine && folder.join(dep).is_file() && !files.contains(dep) {
+                files.push(dep.clone());
+            }
+            !mine
+        });
+        // Known to the folder watcher as running, so it doesn't load them a second time.
+        for f in &files {
+            if let Some(now) = stamp(&folder.join(f)) {
+                state.files.insert(f.clone(), Seen { stamp: now, steady: 2, running: Some(now) });
+            }
+        }
+        log::info!("[HotReload] {plugin} enabled by command");
+        let more = if files.len() > 1 { format!(" (and {} that depend on it)", files.len() - 1) } else { String::new() };
+        prepare(state, folder, files);
+        format!("\u{a7}aEnabling {plugin}{more}: it starts in a moment.")
+    }
 
     fn stamp(path: &std::path::Path) -> Option<(SystemTime, u64)> {
         let meta = std::fs::metadata(path).ok()?;
@@ -2929,6 +3083,11 @@ pub(in crate::game) mod hot_reload {
         state.ticks += 1;
         state.asked.extend(std::mem::take(&mut *ASKED.lock().unwrap_or_else(|e| e.into_inner())));
         let asked: Vec<String> = std::mem::take(&mut state.asked);
+        let toggles = std::mem::take(&mut *TOGGLES.lock().unwrap_or_else(|e| e.into_inner()));
+        for (on, name, who) in toggles {
+            let text = if on { enable(state, &folder, &name) } else { disable(game, state, &folder, &name) };
+            crate::game::paper_bridge::tell_now(game, who, &text);
+        }
         let mut changed: Vec<String> = asked
             .iter()
             .filter_map(|name| state.plugins.iter().find(|p| p.name.eq_ignore_ascii_case(name)).map(|p| p.file.clone()))

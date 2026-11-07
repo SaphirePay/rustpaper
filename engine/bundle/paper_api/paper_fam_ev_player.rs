@@ -100,15 +100,24 @@ thread_local! {
     static RESPAWNS: RefCell<std::collections::HashMap<u128, Value>> = RefCell::new(std::collections::HashMap::new());
 }
 
+/// Packets held for the plugins until `run_guest_commands`. One list for every thread: on HorizonsX a
+/// region thread handles its players' clicks and holds them, and the server's thread answers them after the
+/// regions are back (a list per thread lost every menu click there).
+static HELD: std::sync::Mutex<Vec<Held>> = std::sync::Mutex::new(Vec::new());
+
+/// The slots of a drag still going, by connection: a drag's packets may reach different region threads.
+static DRAGS: std::sync::Mutex<Vec<(u32, Vec<i16>)>> = std::sync::Mutex::new(Vec::new());
+
+fn held_push(h: Held) {
+    HELD.lock().unwrap_or_else(|e| e.into_inner()).push(h);
+}
+
 thread_local! {
-    static HELD: RefCell<Vec<Held>> = const { RefCell::new(Vec::new()) };
     /// True while a held packet goes through: nothing is held then.
     static PASSING: Cell<bool> = const { Cell::new(false) };
     static TABLES: Cell<Option<FindMenu>> = const { Cell::new(None) };
     static STATIONS: Cell<Option<FindMenu>> = const { Cell::new(None) };
     static TRADES: Cell<Option<FindTrade>> = const { Cell::new(None) };
-    /// The slots of a drag still going, by connection.
-    static DRAGS: RefCell<Vec<(u32, Vec<i16>)>> = const { RefCell::new(Vec::new()) };
     /// What each guest's prepare event last saw.
     static PREPARED: RefCell<Vec<(u32, Value)>> = const { RefCell::new(Vec::new()) };
     /// Slots to set once the held packet has gone through: -1 is the cursor.
@@ -2242,8 +2251,8 @@ fn click_payload(game: &Game<'_>, host: &mut LanHost, gi: usize, p: &play::Conta
     if p.input == 5 {
         // A drag: its slots gather as it goes, and only its end asks anything.
         let stage = p.button & 3;
-        let slots = DRAGS.with(|drags| {
-            let mut drags = drags.borrow_mut();
+        let slots = (|| {
+            let mut drags = DRAGS.lock().unwrap_or_else(|e| e.into_inner());
             let at = drags.iter().position(|(c, _)| *c == conn).unwrap_or_else(|| {
                 drags.push((conn, Vec::new()));
                 drags.len() - 1
@@ -2254,7 +2263,7 @@ fn click_payload(game: &Game<'_>, host: &mut LanHost, gi: usize, p: &play::Conta
                 _ => {}
             }
             (stage == 2).then(|| std::mem::take(&mut drags[at].1))
-        })?;
+        })()?;
         if slots.len() < 2 {
             return None;
         }
@@ -2316,7 +2325,7 @@ pub(in crate::game) fn hold_packet(game: &mut Game<'_>, host: &mut LanHost, conn
         return ControlFlow::Continue(());
     };
     if matches!(packet, S::ClientCommand(p) if p.action == 0) && host.hub.guests[gi].dead && runtime::listens("pl_respawn_ask") {
-        HELD.with(|held| held.borrow_mut().push(Held { conn, packet: packet.clone(), payload: json!({ "kind": "respawn_ask" }), picked: None }));
+        held_push(Held { conn, packet: packet.clone(), payload: json!({ "kind": "respawn_ask" }), picked: None });
         host.commands.push(GuestCommand { conn, command: MARK.to_owned(), permission: 0, integrated: false, quiet: true });
         return ControlFlow::Break(());
     }
@@ -2324,7 +2333,7 @@ pub(in crate::game) fn hold_packet(game: &mut Game<'_>, host: &mut LanHost, conn
     let toggled = matches!(packet, S::PlayerInput(_) | S::PlayerAbilities(_) | S::RecipeBookChangeSettings(_)) || matches!(packet, S::PlayerCommand(p) if matches!(p.action, 1 | 2));
     let first = if toggled { toggle_payload(host, gi, packet) } else { heard_first(game, host, gi, conn, packet) };
     if let Some(payload) = first {
-        HELD.with(|held| held.borrow_mut().push(Held { conn, packet: packet.clone(), payload, picked: None }));
+        held_push(Held { conn, packet: packet.clone(), payload, picked: None });
         host.commands.push(GuestCommand { conn, command: MARK.to_owned(), permission: 0, integrated: false, quiet: true });
         return ControlFlow::Break(());
     }
@@ -2412,7 +2421,7 @@ pub(in crate::game) fn hold_packet(game: &mut Game<'_>, host: &mut LanHost, conn
     let Some((payload, packet)) = held else {
         return ControlFlow::Continue(());
     };
-    HELD.with(|held| held.borrow_mut().push(Held { conn, packet, payload, picked }));
+    held_push(Held { conn, packet, payload, picked });
     host.commands.push(GuestCommand { conn, command: MARK.to_owned(), permission: 0, integrated: false, quiet: true });
     ControlFlow::Break(())
 }
@@ -2560,13 +2569,17 @@ fn heard_first(game: &mut Game<'_>, host: &mut LanHost, gi: usize, conn: u32, pa
 
 /// `PlayerInteractEntityEvent`, for an entity the click reaches.
 fn entity_click(game: &mut Game<'_>, host: &mut LanHost, gi: usize, conn: u32, p: &play::Interact) -> Option<Value> {
-    let target = game.guest_target_box(host, gi, p.id)?;
+    // A plugin's `Interaction` (an NPC's hitbox) is not one the game's lookup knows.
+    let interaction = crate::game::paper_fam_entity::interaction_box(game, p.id);
+    let is_interaction = interaction.is_some();
+    let target = game.guest_target_box(host, gi, p.id).or(interaction)?;
     if !game.inside_border(&target) || game.as_guest(host, conn, |g| g.within_entity_interaction_range(&target, 3.0)) != Some(true) {
         return None;
     }
     let other = host.hub.guests.iter().any(|g| g.entity_id == p.id);
     let level = host.hub.guests[gi].dimension.clone();
     let kind = if other { json!("minecraft:player") } else { game.native_entity(&json!({ "dimension": level, "id": p.id, "data": false }))["kind"].clone() };
+    let kind = if kind.is_null() && is_interaction { json!("minecraft:interaction") } else { kind };
     Some(guest_payload(host, gi, json!({ "kind": "use_entity", "entity": p.id, "type": kind, "hand": if p.hand == 1 { "OFF_HAND" } else { "HAND" }, "at": p.location })))
 }
 
@@ -2979,7 +2992,7 @@ pub(in crate::game) fn run_held(game: &mut Game<'_>) {
     for later in LATER.with(|later| std::mem::take(&mut *later.borrow_mut())) {
         open_now(game, later);
     }
-    let held = HELD.with(|held| std::mem::take(&mut *held.borrow_mut()));
+    let held = std::mem::take(&mut *HELD.lock().unwrap_or_else(|e| e.into_inner()));
     for Held { conn, packet, payload, picked } in held {
         if payload["kind"] == "respawn_ask" {
             respawn_ask(game, conn);

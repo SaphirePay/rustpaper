@@ -1,4 +1,4 @@
-# Server speed: each row's gain is measured with tools/perf_bench.py against a build without the rows.
+# Server speed: each row's gain is measured with tools/perf_bench.py against a build without this table.
 LIB = 'horizon-client/src/'
 EDITS = [
     # One write a tick for each player, not one a packet: with TCP_NODELAY each packet was a segment of its own.

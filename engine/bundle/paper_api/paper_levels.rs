@@ -303,6 +303,11 @@ fn resident(game: &mut Game<'_>, min: [i32; 3], max: [i32; 3]) -> bool {
     if wanted.is_empty() {
         return true;
     }
+    // A region's thread holds only its region's chunks and can't load others: waiting here (a minute) for one
+    // that another thread holds took the whole server down on the watchdog. Not there is the answer.
+    if game.region_worker {
+        return false;
+    }
     let added: Vec<(i32, i32)> = wanted.iter().copied().filter(|c| game.streaming.forced.insert(*c)).collect();
     game.streaming.rank_forced(x0, z0, x1, z1);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
